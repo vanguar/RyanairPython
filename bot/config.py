@@ -116,3 +116,4 @@ MSG_FLIGHTS_FOUND_SEE_BELOW = "Найдены следующие рейсы:"
 MSG_ERROR_OCCURRED = "Произошла ошибка. Попробуйте позже или свяжитесь с администратором."
 MSG_CANCELLED = "Поиск отменен. Чтобы начать новый, выберите команду /search или /flexsearch."
 MSG_NEW_SEARCH_PROMPT = "Хотите сделать новый поиск? Выберите /search или /flexsearch."
+FLIGHTS_CHUNK_SIZE = 5 # Или другое число, например 3 или 10
