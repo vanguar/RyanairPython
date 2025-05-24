@@ -178,9 +178,9 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
             continue
         try:
             date_obj = datetime.strptime(flight_date_str, "%Y-%m-%d")
-            formatted_date_header = f"\n--- 📅  {date_obj.strftime('%d %B %Y (%A)')}  ---\n"
+            formatted_date_header = f"\n--- 📅 *{date_obj.strftime('%d %B %Y (%A)')}* ---\n"
         except ValueError: 
-            formatted_date_header = f"\n--- 📅  {flight_date_str}  ---\n"
+            formatted_date_header = f"\n--- 📅 *{flight_date_str}* ---\n"
         flights_message_parts.append(formatted_date_header)
 
         for flight in flights_on_this_date:
@@ -1245,7 +1245,7 @@ async def handle_search_other_airports_decision(update: Update, context: Context
             
             flights_from_alt_by_date = await flight_api.find_flights_with_fallback(
                 departure_airport_iata=iata_code,
-                  original_search_params
+                **original_search_params
             )
             if flights_from_alt_by_date:
                 found_alternative_flights = True
@@ -1265,13 +1265,13 @@ async def handle_search_other_airports_decision(update: Update, context: Context
             # Формируем сообщение для альтернативных рейсов
             alt_flights_final_message_parts = [f"Найдены рейсы из других аэропортов в {departure_country}:\n"]
             for source_airport_info, flights_by_sub_date in all_alternative_flights_by_date_and_source.items():
-                alt_flights_final_message_parts.append(f"\n✈️ ---  Из аэропорта: {source_airport_info}  ---\n")
+                alt_flights_final_message_parts.append(f"\n✈️ --- *Из аэропорта: {source_airport_info}* ---\n")
                 for date_key, flights_on_this_date in sorted(flights_by_sub_date.items()):
                     try:
                         date_obj_alt = datetime.strptime(date_key, "%Y-%m-%d")
-                        alt_flights_final_message_parts.append(f"\n--- 📅  {date_obj_alt.strftime('%d %B %Y (%A)')}  ---\n")
+                        alt_flights_final_message_parts.append(f"\n--- 📅 *{date_obj_alt.strftime('%d %B %Y (%A)')}* ---\n")
                     except ValueError:
-                        alt_flights_final_message_parts.append(f"\n--- 📅  {date_key}  ---\n")
+                        alt_flights_final_message_parts.append(f"\n--- 📅 *{date_key}* ---\n")
                     
                     for i_alt, flight_alt in enumerate(flights_on_this_date):
                         # Можно ввести отдельный CHUNK_SIZE для альтернативных, или использовать тот же
