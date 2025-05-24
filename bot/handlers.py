@@ -41,12 +41,57 @@ async def ask_arrival_country(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif hasattr(update, 'callback_query') and update.callback_query and update.effective_chat:
         await context.bot.send_message(chat_id=update.effective_chat.id, text=message_text, reply_markup=keyboards.get_country_reply_keyboard())
 
-async def ask_arrival_city(update: Update, context: ContextTypes.DEFAULT_TYPE, country_name: str):
-    # (без изменений)
-    if hasattr(update, 'message') and update.message:
-        await update.message.reply_text("Выберите город прилёта:", reply_markup=keyboards.get_city_reply_keyboard(country_name))
-    elif hasattr(update, 'callback_query') and update.callback_query and update.effective_chat:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Выберите город прилёта:", reply_markup=keyboards.get_city_reply_keyboard(country_name))
+async def ask_arrival_city(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    country_name: str,
+) -> int:
+    """
+    Шаг «Выбор города (аэропорта) прилёта».
+
+    • Убираем из списка тот IATA, что уже выбран на вылете.
+    • Если после фильтрации вариантов не остаётся, возвращаем
+      пользователя к шагу выбора страны прилёта.
+    """
+    chat_id = update.effective_chat.id
+    dep_iata = context.user_data.get("departure_airport_iata")
+
+    # --- готовим список городов / IATA в выбранной стране ---
+    all_cities = config.COUNTRIES_DATA.get(country_name, {})
+    available_cities = {
+        city: iata for city, iata in all_cities.items() if iata != dep_iata
+    }
+
+    # --- нет ни одного альтернативного аэропорта -----------------
+    if not available_cities:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"В стране «{country_name}» нет других аэропортов, отличных от "
+                "выбранного для вылета.\n"
+                "Выберите другую страну прилёта."
+            ),
+        )
+        # отправляем пользователя на повторный выбор страны прилёта
+        return await ask_arrival_country(update, context, prompt_text="Выберите страну прилёта:")
+
+    # --- показываем клавиатуру городов ---------------------------
+    keyboard = keyboards.get_city_reply_keyboard(
+        country_name, override_cities=available_cities
+    )
+
+    if getattr(update, "message", None):
+        await update.message.reply_text("Выберите город прилёта:", reply_markup=keyboard)
+    else:
+        await context.bot.send_message(
+            chat_id=chat_id, text="Выберите город прилёта:", reply_markup=keyboard
+        )
+
+    # сохраняем доступные варианты, если потом понадобятся
+    context.user_data["arrival_city_options"] = available_cities
+
+    return config.ASK_ARRIVAL_CITY
+
 
 async def ask_year(message_or_update: Update | object, context: ContextTypes.DEFAULT_TYPE, message_text: str, callback_prefix: str = ""):
     # (без изменений, если он корректно работает с ReplyKeyboardRemove перед ним)
