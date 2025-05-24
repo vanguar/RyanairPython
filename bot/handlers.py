@@ -1104,6 +1104,5 @@ def create_conversation_handler() -> ConversationHandler:
         # per_chat=True, # По умолчанию True
         # allow_reentry=False # По умолчанию False, установите True, если команда /start должна прерывать и перезапускать диалог
     )
-    # Добавление обработчика ошибок именно для этого ConversationHandler
-    conv_handler.error_handler = error_handler_conv
+    
     return conv_handler
