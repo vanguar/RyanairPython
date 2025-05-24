@@ -63,7 +63,7 @@ RUSSIAN_MONTHS = {
     SELECTING_RETURN_DATE_RANGE,
     SELECTING_RETURN_DATE,
     SELECTING_MAX_PRICE,
-    PROCESSING_STANDARD_SEARCH
+    PROCESSING_STANDARD_SEARCH 
 ) = range(15)
 
 # Гибкий поиск (начинаем нумерацию с предыдущего значения + 1)
@@ -77,8 +77,6 @@ RUSSIAN_MONTHS = {
     SELECTING_FLEX_ARRIVAL_COUNTRY,   # 21
     SELECTING_FLEX_ARRIVAL_CITY,      # 22
     ASK_FLEX_DATES,             # 23
-    # Если даты важны, можно переиспользовать состояния стандартного поиска для дат
-    # или создать новые, если логика отличается
     SELECTING_FLEX_DEPARTURE_YEAR,    # 24
     SELECTING_FLEX_DEPARTURE_MONTH,   # 25
     SELECTING_FLEX_DEPARTURE_DATE_RANGE, # 26
@@ -87,8 +85,10 @@ RUSSIAN_MONTHS = {
     SELECTING_FLEX_RETURN_MONTH,      # 29
     SELECTING_FLEX_RETURN_DATE_RANGE, # 30
     SELECTING_FLEX_RETURN_DATE,       # 31
-    PROCESSING_FLEX_SEARCH      # 32
-) = range(15, 15 + 18)
+    PROCESSING_FLEX_SEARCH,      # 32
+    # NEW STATE for handling "search other airports" response
+    ASK_SEARCH_OTHER_AIRPORTS # 33
+) = range(15, 15 + 19) # MODIFIED: range increased by 1
 
 
 # Callback data префиксы для различения кнопок в разных диалогах, если нужно
@@ -97,12 +97,18 @@ CALLBACK_PREFIX_FLEX = "flex_"
 CALLBACK_SKIP = "skip_step"
 CALLBACK_NO_SPECIFIC_DATES = "no_specific_dates"
 
+# NEW: Callback data для кнопок поиска из других аэропортов
+CALLBACK_YES_OTHER_AIRPORTS = "yes_other_airports"
+CALLBACK_NO_OTHER_AIRPORTS = "no_other_airports"
+CALLBACK_PERFORM_SEARCH_OTHER_AIRPORTS = "perform_search_other_airports" # Если понадобится отдельный шаг
+
 # Сообщения
 MSG_WELCOME = (
     "Добро пожаловать в бот поиска билетов на Ryanair!\n"
     "Выберите тип поиска:\n"
     "/search - Стандартный поиск с указанием всех параметров.\n"
-    "/flexsearch - Гибкий поиск (можно пропустить даты или направление)."
+    "/flexsearch - Гибкий поиск (можно пропустить даты или направление).\n"
+    "Или выберите опцию ниже:" # MODIFIED: added line for new button
 )
 MSG_FLIGHT_TYPE_PROMPT = (
     "Выберите тип рейса:\n"
@@ -114,6 +120,6 @@ MSG_SEARCHING_FLIGHTS = "Начинаю поиск рейсов..."
 MSG_NO_FLIGHTS_FOUND = "К сожалению, по вашим критериям рейсы не найдены."
 MSG_FLIGHTS_FOUND_SEE_BELOW = "Найдены следующие рейсы:"
 MSG_ERROR_OCCURRED = "Произошла ошибка. Попробуйте позже или свяжитесь с администратором."
-MSG_CANCELLED = "Поиск отменен. Чтобы начать новый, выберите команду /search или /flexsearch."
-MSG_NEW_SEARCH_PROMPT = "Хотите сделать новый поиск? Выберите /search или /flexsearch."
-FLIGHTS_CHUNK_SIZE = 5 # Или другое число, например 3 или 10
+MSG_CANCELLED = "Поиск отменен. Чтобы начать новый, выберите команду /start." # MODIFIED: start instead of search/flexsearch
+MSG_NEW_SEARCH_PROMPT = "Хотите сделать новый поиск? Выберите опцию через /start." # MODIFIED
+FLIGHTS_CHUNK_SIZE = 3 # MODIFIED: Уменьшил для лучшей демонстрации группировки по датам

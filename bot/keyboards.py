@@ -2,7 +2,10 @@
 import logging
 from datetime import datetime, timedelta
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
-from .config import COUNTRIES_DATA, RUSSIAN_MONTHS, CALLBACK_SKIP, CALLBACK_NO_SPECIFIC_DATES
+# MODIFIED: Added CALLBACK_YES_OTHER_AIRPORTS, CALLBACK_NO_OTHER_AIRPORTS
+from .config import COUNTRIES_DATA, RUSSIAN_MONTHS, CALLBACK_SKIP, CALLBACK_NO_SPECIFIC_DATES, \
+                    CALLBACK_YES_OTHER_AIRPORTS, CALLBACK_NO_OTHER_AIRPORTS
+
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +14,8 @@ def get_main_menu_keyboard():
     keyboard = [
         [InlineKeyboardButton("✈️ Стандартный поиск", callback_data="start_standard_search")],
         [InlineKeyboardButton("✨ Гибкий поиск", callback_data="start_flex_search")],
+        # NEW: Кнопка "Куда угодно"
+        [InlineKeyboardButton("🎯 Найти самый дешёвый билет (куда угодно)", callback_data="start_flex_anywhere")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -144,5 +149,16 @@ def get_skip_dates_keyboard(callback_select_dates: str):
     keyboard = [
         [InlineKeyboardButton("🗓 Выбрать конкретные даты", callback_data=callback_select_dates)],
         [InlineKeyboardButton("✨ Искать без указания дат", callback_data=CALLBACK_NO_SPECIFIC_DATES)],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# NEW: Клавиатура для предложения поиска из других аэропортов
+def get_search_other_airports_keyboard(country_name: str):
+    """Клавиатура Да/Нет для поиска из других аэропортов указанной страны."""
+    keyboard = [
+        [
+            InlineKeyboardButton(f"Да, искать из других в {country_name}", callback_data=CALLBACK_YES_OTHER_AIRPORTS),
+            InlineKeyboardButton("Нет, спасибо", callback_data=CALLBACK_NO_OTHER_AIRPORTS),
+        ]
     ]
     return InlineKeyboardMarkup(keyboard)
