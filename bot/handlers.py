@@ -12,6 +12,7 @@ from telegram.ext import (
 from datetime import datetime, timedelta 
 from collections import defaultdict
 from telegram.helpers import escape_markdown # <--- ДОБАВЛЕН ИМПОРТ
+from telegram import ReplyKeyboardRemove
 
 from . import config, keyboards, helpers, flight_api
 
@@ -80,12 +81,19 @@ async def ask_arrival_city(
         country_name, override_cities=available_cities
     )
 
+        # ➊ сначала убираем старую клавиатуру
     if getattr(update, "message", None):
-        await update.message.reply_text("Выберите город прилёта:", reply_markup=keyboard)
+        await update.message.reply_text("Ок, убираю клавиатуру…", reply_markup=ReplyKeyboardRemove())
     else:
-        await context.bot.send_message(
-            chat_id=chat_id, text="Выберите город прилёта:", reply_markup=keyboard
-        )
+        await context.bot.send_message(chat_id=chat_id, text="Ок, убираю клавиатуру…", reply_markup=ReplyKeyboardRemove())
+
+    # ➋ теперь отправляем новое сообщение с клавиатурой городов
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="Выберите город прилёта:",
+        reply_markup=keyboard
+    )
+
 
     # сохраняем доступные варианты, если потом понадобятся
     context.user_data["arrival_city_options"] = available_cities
