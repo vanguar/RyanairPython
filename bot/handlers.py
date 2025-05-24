@@ -71,18 +71,29 @@ async def ask_year(message_or_update: Update | object, context: ContextTypes.DEF
         logger.warning("ask_year: не удалось определить объект для ответа.")
 
 async def ask_month(update: Update, context: ContextTypes.DEFAULT_TYPE,
-                  year_for_months: int, message_text: str, callback_prefix: str = "",
-                  departure_year_for_comparison: int = None,
-                  departure_month_for_comparison: int = None):
-    await update.callback_query.edit_message_text(
-        text=message_text,
-        reply_markup=keyboards.generate_month_buttons( #
-            callback_prefix=callback_prefix,
-            year_for_months=year_for_months,
-            min_departure_month=departure_month_for_comparison,  # ИСПРАВЛЕНО
-            departure_year_for_comparison=departure_year_for_comparison  # ИСПРАВЛЕНО
+                    year_for_months: int, message_text: str, callback_prefix: str = "",
+                    departure_year_for_comparison: int = None,
+                    departure_month_for_comparison: int = None):
+    logger.info(f"ask_month: Вызов клавиатуры месяцев. Год: {year_for_months}, Префикс: {callback_prefix}")
+
+    try:
+        await update.callback_query.edit_message_text(
+            text=message_text,
+            reply_markup=keyboards.generate_month_buttons(
+                callback_prefix=callback_prefix,
+                year_for_months=year_for_months,
+                min_departure_month=departure_month_for_comparison,  # ✅ ПРАВИЛЬНО
+                departure_year_for_comparison=departure_year_for_comparison  # ✅ ПРАВИЛЬНО
+            )
         )
-    )
+        logger.info("ask_month: Клавиатура месяцев успешно отображена.")
+    except TypeError as e:
+        logger.error(f"ask_month: TypeError при вызове generate_month_buttons: {e}")
+        await update.callback_query.edit_message_text("Произошла ошибка при отображении месяцев. Попробуйте /start")
+    except Exception as e:
+        logger.error(f"ask_month: Непредвиденная ошибка: {e}")
+        await update.callback_query.edit_message_text("Произошла внутренняя ошибка. Попробуйте /start")
+
 
 async def ask_date_range(update: Update, context: ContextTypes.DEFAULT_TYPE, year: int, month: int, message_text: str, callback_prefix: str = ""):
     await update.callback_query.edit_message_text(
