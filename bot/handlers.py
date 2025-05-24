@@ -294,6 +294,8 @@ async def standard_departure_year_selected(update: Update, context: ContextTypes
 
 async def standard_departure_month_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    # ----> ВАЖНЫЙ ЛОГ <----
+    logger.info(f"ДЕБАГ: standard_departure_month_selected ВЫЗВАНА! query.data: {query.data}") 
     await query.answer()
     selected_month = int(query.data.replace(config.CALLBACK_PREFIX_STANDARD + "dep_month_", "")) #
 
