@@ -1229,7 +1229,7 @@ async def handle_search_other_airports_decision(update: Update, context: Context
             return ConversationHandler.END # Завершаем, т.к. альтернатив нет
 
         found_alternative_flights = False
-        all_alternative_flights_by_date_and_source = defaultdict(list) # Изменено для лучшей группировки
+        all_alternative_flights_by_date_and_source = defaultdict(dict) # Изменено для лучшей группировки
 
         original_search_params = {
             "arrival_airport_iata": context.user_data.get('arrival_airport_iata'),
@@ -1256,9 +1256,10 @@ async def handle_search_other_airports_decision(update: Update, context: Context
                     # find_flights_with_fallback возвращает {дата_строка: [рейсы]}
                     # Мы хотим добавить информацию об источнике
                     source_key = f"{city} ({iata_code})"
-                    if date_str not in all_alternative_flights_by_date_and_source[source_key]:
-                         all_alternative_flights_by_date_and_source[source_key][date_str] = []
-                    all_alternative_flights_by_date_and_source[source_key][date_str].extend(flights_list)
+                    all_alternative_flights_by_date_and_source[source_key]\
+                        .setdefault(date_str, [])\
+                        .extend(flights_list)
+
         
         if found_alternative_flights:
             # Формируем сообщение для альтернативных рейсов
