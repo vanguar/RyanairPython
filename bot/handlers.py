@@ -1082,6 +1082,7 @@ def create_conversation_handler() -> ConversationHandler:
     # Паттерны для CallbackQueryHandlers
     # ... (без изменений) ...
     std_dep_year_pattern = f"^{config.CALLBACK_PREFIX_STANDARD}dep_year_"
+    flex_dep_year_pattern = f"^{config.CALLBACK_PREFIX_FLEX}dep_year_"
     # ... (остальные паттерны без изменений) ...
     flex_ret_date_pattern = f"^{config.CALLBACK_PREFIX_FLEX}ret_date_"
 
