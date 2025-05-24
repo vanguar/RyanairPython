@@ -301,6 +301,7 @@ async def standard_departure_year_selected(update: Update, context: ContextTypes
                   year_for_months=selected_year,
                   message_text=f"Год вылета: {selected_year}. Выберите месяц:",
                   callback_prefix=config.CALLBACK_PREFIX_STANDARD + "dep_month_") #
+    logger.info(f"standard_departure_year_selected: Переход в SELECTING_DEPARTURE_MONTH = {config.SELECTING_DEPARTURE_MONTH}")
     return config.SELECTING_DEPARTURE_MONTH #
 
 async def standard_departure_month_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
