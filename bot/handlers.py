@@ -1080,12 +1080,24 @@ async def error_handler_conv(update: Update | None, context: ContextTypes.DEFAUL
 # --- Создание ConversationHandler ---
 def create_conversation_handler() -> ConversationHandler:
     # Паттерны для CallbackQueryHandlers
-    # ... (без изменений) ...
+    # Эти переменные используются для сопоставления callback_data от inline-кнопок.
+    # Убедитесь, что префиксы и структура соответствуют тому, как вы генерируете callback_data в keyboards.py
+    
     std_dep_year_pattern = f"^{config.CALLBACK_PREFIX_STANDARD}dep_year_"
+    # Паттерн для выбора года вылета в стандартном поиске.
+    # Пример callback_data: "std_dep_year_2024"
+    
     flex_dep_year_pattern = f"^{config.CALLBACK_PREFIX_FLEX}dep_year_"
-    # ... (остальные паттерны без изменений) ...
-    flex_ret_date_pattern = f"^{config.CALLBACK_PREFIX_FLEX}ret_date_"
+    # Паттерн для выбора года вылета в гибком поиске.
+    # Пример callback_data: "flex_dep_year_2024"
 
+    flex_ret_year_pattern = f"^{config.CALLBACK_PREFIX_FLEX}ret_year_"
+    # Паттерн для выбора года ОБРАТНОГО вылета в гибком поиске.
+    # Пример callback_data: "flex_ret_year_2024"
+    
+    flex_ret_date_pattern = f"^{config.CALLBACK_PREFIX_FLEX}ret_date_"
+    # Паттерн для выбора конкретной ОБРАТНОЙ даты в гибком поиске.
+    # Пример callback_data: "flex_ret_date_2024-12-31"
 
     conv_handler = ConversationHandler(
         entry_points=[
@@ -1099,7 +1111,6 @@ def create_conversation_handler() -> ConversationHandler:
             # Стандартный поиск
             config.SELECTING_FLIGHT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_flight_type)],
             config.SELECTING_DEPARTURE_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_departure_country)],
-            # ... (остальные состояния стандартного поиска без изменений в определениях) ...
             config.SELECTING_DEPARTURE_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_departure_city)],
             config.SELECTING_DEPARTURE_YEAR: [CallbackQueryHandler(standard_departure_year_selected, pattern=std_dep_year_pattern)],
             config.SELECTING_DEPARTURE_MONTH: [CallbackQueryHandler(standard_departure_month_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_month_")],
@@ -1115,7 +1126,6 @@ def create_conversation_handler() -> ConversationHandler:
             
             # Гибкий поиск
             config.SELECTING_FLEX_FLIGHT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, flex_flight_type)],
-            # ... (остальные состояния гибкого поиска без изменений в определениях) ...
             config.SELECTING_FLEX_MAX_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, flex_max_price)],
             config.ASK_FLEX_DEPARTURE_AIRPORT: [CallbackQueryHandler(flex_ask_departure_airport, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ask_dep_")],
             config.SELECTING_FLEX_DEPARTURE_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, flex_departure_country)],
@@ -1128,10 +1138,10 @@ def create_conversation_handler() -> ConversationHandler:
             config.SELECTING_FLEX_DEPARTURE_MONTH: [CallbackQueryHandler(flex_departure_month_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_month_")],
             config.SELECTING_FLEX_DEPARTURE_DATE_RANGE: [CallbackQueryHandler(flex_departure_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_range_")],
             config.SELECTING_FLEX_DEPARTURE_DATE: [CallbackQueryHandler(flex_departure_date_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_date_")],
-            config.SELECTING_FLEX_RETURN_YEAR: [CallbackQueryHandler(flex_return_year_selected, pattern=flex_ret_year_pattern)],
+            config.SELECTING_FLEX_RETURN_YEAR: [CallbackQueryHandler(flex_return_year_selected, pattern=flex_ret_year_pattern)], # Используется определенный flex_ret_year_pattern
             config.SELECTING_FLEX_RETURN_MONTH: [CallbackQueryHandler(flex_return_month_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_month_")],
             config.SELECTING_FLEX_RETURN_DATE_RANGE: [CallbackQueryHandler(flex_return_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_range_")],
-            config.SELECTING_FLEX_RETURN_DATE: [CallbackQueryHandler(flex_return_date_selected, pattern=flex_ret_date_pattern)],
+            config.SELECTING_FLEX_RETURN_DATE: [CallbackQueryHandler(flex_return_date_selected, pattern=flex_ret_date_pattern)], # Используется определенный flex_ret_date_pattern
             
             # NEW: Состояние для ожидания ответа на поиск из других аэропортов
             config.ASK_SEARCH_OTHER_AIRPORTS: [
