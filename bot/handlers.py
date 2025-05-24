@@ -1478,8 +1478,8 @@ def create_conversation_handler() -> ConversationHandler:
             # CallbackQueryHandler(lambda u, c: u.callback_query.answer("Эта дата уже прошла или недоступна для выбора.", show_alert=True), pattern="^ignore_past_day$"),
         ],
         map_to_parent={},
-        # per_message=False, 
-        # allow_reentry=True, # Рассмотрите возможность разрешить повторный вход для /start, чтобы прерывать диалог
+        per_message=True, 
+        allow_reentry=True, # Рассмотрите возможность разрешить повторный вход для /start, чтобы прерывать диалог
     )
     
     return conv_handler
