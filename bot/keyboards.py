@@ -66,30 +66,40 @@ def generate_month_buttons(
         min_departure_month: int | None = None,      # в ask_month это departure_month_for_comparison
         departure_year_for_comparison: int | None = None,
 ):
-    """Генерирует Inline-keyboard с месяцами."""
-    keyboard = []
-    month_items = list(RUSSIAN_MONTHS.items())      # [(1, "Январь"), …]
+    """Генерирует Inline-keyboard с месяцами, скрывая уже прошедшие."""
 
-    # TODO: В будущем здесь можно добавить логику для использования
-    # year_for_months, min_departure_month, departure_year_for_comparison
-    # для отображения только доступных месяцев (например, не показывать прошедшие).
-    # Пока что, для отладки callback_data, эта логика не добавлена,
-    # но параметры в сигнатуре уже есть.
+    now = datetime.now()
+    cur_year, cur_month = now.year, now.month
+
+    keyboard = []
+    month_items = list(RUSSIAN_MONTHS.items())  # [(1, 'Январь'), …]
 
     for i in range(0, len(month_items), 3):
         row = []
-        for idx, month_name in month_items[i : i + 3]:
+        for idx, month_name in month_items[i:i + 3]:
+
+            # --- фильтр «старых» месяцев ---
+            past_in_current_year = (year_for_months == cur_year and idx < cur_month)
+            before_min_departure = (
+                min_departure_month is not None
+                and departure_year_for_comparison == year_for_months
+                and idx < min_departure_month
+            )
+            if past_in_current_year or before_min_departure:
+                continue
+
             callback_data = f"{callback_prefix}{str(idx).zfill(2)}"
-            # Логируем создание каждой кнопки ДО её добавления
             logger.info(
                 "generate_month_buttons: создаю кнопку '%s' с callback_data '%s'",
                 month_name, callback_data
             )
             row.append(InlineKeyboardButton(text=month_name, callback_data=callback_data))
-        keyboard.append(row)
 
-    # Старая некорректная строка логирования удалена.
+        if row:                                   # не добавляем пустые ряды
+            keyboard.append(row)
+
     return InlineKeyboardMarkup(keyboard)
+
 
 def generate_date_range_buttons(year: int, month: int, callback_prefix: str = ""):
     """Генерирует Inline Keyboard с диапазонами дат (1-10, 11-20, 21-конец месяца)."""
