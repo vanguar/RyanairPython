@@ -1,8 +1,8 @@
 # bot/keyboards.py
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime # Используем datetime, timedelta убрана, если не нужна
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
-# MODIFIED: Added CALLBACK_YES_OTHER_AIRPORTS, CALLBACK_NO_OTHER_AIRPORTS
+# MODIFIED: Added CALLBACK_YES_OTHER_AIRPORTS, CALLBACK_NO_OTHER_AIRPORTS (если они используются, оставляем)
 from .config import COUNTRIES_DATA, RUSSIAN_MONTHS, CALLBACK_SKIP, CALLBACK_NO_SPECIFIC_DATES, \
                     CALLBACK_YES_OTHER_AIRPORTS, CALLBACK_NO_OTHER_AIRPORTS
 
@@ -14,7 +14,6 @@ def get_main_menu_keyboard():
     keyboard = [
         [InlineKeyboardButton("✈️ Стандартный поиск", callback_data="start_standard_search")],
         [InlineKeyboardButton("✨ Гибкий поиск", callback_data="start_flex_search")],
-        # NEW: Кнопка "Куда угодно"
         [InlineKeyboardButton("🎯 Найти самый дешёвый билет (куда угодно)", callback_data="start_flex_anywhere")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -34,7 +33,6 @@ def get_country_reply_keyboard():
         return ReplyKeyboardMarkup([["Ошибка: нет данных о странах"]], one_time_keyboard=True)
     
     country_names = sorted(list(COUNTRIES_DATA.keys()))
-    # Группируем по 3 страны в ряд
     keyboard = [country_names[i:i + 3] for i in range(0, len(country_names), 3)]
     return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
 
@@ -45,7 +43,6 @@ def get_city_reply_keyboard(country_name: str):
         return ReplyKeyboardMarkup([["Ошибка: нет данных о городах"]], one_time_keyboard=True)
 
     city_names = sorted(list(COUNTRIES_DATA[country_name].keys()))
-    # Группируем по 3 города в ряд
     keyboard = [city_names[i:i + 3] for i in range(0, len(city_names), 3)]
     return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
 
@@ -62,115 +59,135 @@ def generate_year_buttons(callback_prefix: str = ""):
 
 def generate_month_buttons(
         callback_prefix: str = "",
-        year_for_months: int | None = None,          # прилетают из ask_month
-        min_departure_month: int | None = None,      # в ask_month это departure_month_for_comparison
+        year_for_months: int | None = None,
+        min_departure_month: int | None = None,
         departure_year_for_comparison: int | None = None,
 ):
-    """Генерирует Inline-keyboard с месяцами, скрывая уже прошедшие."""
-
+    """Генерирует Inline-keyboard с месяцами, скрывая уже прошедшие или невалидные."""
     now = datetime.now()
     cur_year, cur_month = now.year, now.month
+    keyboard_rows = [] # Используем keyboard_rows для ясности
+    month_items = list(RUSSIAN_MONTHS.items())
 
-    keyboard = []
-    month_items = list(RUSSIAN_MONTHS.items())  # [(1, 'Январь'), …]
+    if year_for_months is None: # На случай, если параметр не передан (хотя из handlers.py должен)
+        year_for_months = cur_year
 
-    for i in range(0, len(month_items), 3):
-        row = []
-        for idx, month_name in month_items[i:i + 3]:
+    current_row = []
+    for idx, month_name in month_items: # Перебираем все 12 месяцев
+        # Фильтр 1: месяц уже прошел в текущем выбранном году
+        is_past_month = (year_for_months == cur_year and idx < cur_month)
+        
+        # Фильтр 2: для обратных рейсов - месяц раньше месяца вылета в том же году
+        is_before_min_departure = (
+            min_departure_month is not None and
+            departure_year_for_comparison is not None and # Добавим проверку, что год сравнения передан
+            departure_year_for_comparison == year_for_months and
+            idx < min_departure_month
+        )
 
-            # --- фильтр «старых» месяцев ---
-            past_in_current_year = (year_for_months == cur_year and idx < cur_month)
-            before_min_departure = (
-                min_departure_month is not None
-                and departure_year_for_comparison == year_for_months
-                and idx < min_departure_month
-            )
-            if past_in_current_year or before_min_departure:
-                continue
+        if is_past_month or is_before_min_departure:
+            continue # Пропускаем этот месяц
 
-            callback_data = f"{callback_prefix}{str(idx).zfill(2)}"
-            logger.info(
-                "generate_month_buttons: создаю кнопку '%s' с callback_data '%s'",
-                month_name, callback_data
-            )
-            row.append(InlineKeyboardButton(text=month_name, callback_data=callback_data))
+        callback_data = f"{callback_prefix}{str(idx).zfill(2)}"
+        logger.info(
+            "generate_month_buttons: создаю кнопку '%s' с callback_data '%s'",
+            month_name, callback_data
+        )
+        current_row.append(InlineKeyboardButton(text=month_name, callback_data=callback_data))
+        
+        if len(current_row) == 3: # 3 кнопки в ряду
+            keyboard_rows.append(current_row)
+            current_row = []
+            
+    if current_row: # Добавляем оставшиеся кнопки, если их меньше 3 в последнем ряду
+        keyboard_rows.append(current_row)
 
-        if row:                                   # не добавляем пустые ряды
-            keyboard.append(row)
-
-    return InlineKeyboardMarkup(keyboard)
+    if not keyboard_rows: # Если все месяцы были отфильтрованы
+        logger.warning(f"Для {year_for_months} (min_dep_month: {min_departure_month} in {departure_year_for_comparison}) не найдено доступных месяцев.")
+        # Используем callback_data, для которого есть обработчик в fallbacks ConversationHandler
+        keyboard_rows.append([InlineKeyboardButton("Нет доступных месяцев", callback_data="no_valid_months_error")]) 
+        
+    return InlineKeyboardMarkup(keyboard_rows)
 
 
 def generate_date_range_buttons(year: int, month: int, callback_prefix: str = ""):
-    """Генерирует Inline Keyboard с диапазонами дат (1-10, 11-20, 21-конец месяца)."""
+    """Inline-клава с диапазонами дат; в текущем месяце скрывает уже прошедшие."""
+    today = datetime.now().date()
+
     try:
-        # Определяем количество дней в месяце
         if month == 12:
-            # Для декабря следующий месяц - январь следующего года
             days_in_month = (datetime(year + 1, 1, 1) - datetime(year, month, 1)).days
         else:
             days_in_month = (datetime(year, month + 1, 1) - datetime(year, month, 1)).days
     except ValueError:
-        logger.error(f"Неверный год ({year}) или месяц ({month}) для генерации диапазонов дат.")
-        return InlineKeyboardMarkup([]) # Возвращаем пустую клавиатуру в случае ошибки
+        logger.error(f"Неверный год/месяц {year}-{month} для generate_date_range_buttons")
+        return InlineKeyboardMarkup([])
 
-    ranges = [
-        (1, 10),
-        (11, 20),
-        (21, days_in_month)
-    ]
+    ranges = [(1, 10), (11, 20), (21, days_in_month)]
+    keyboard_buttons = [] # Используем keyboard_buttons для ясности
 
-    keyboard = []
     for start, end in ranges:
-        # Убедимся, что конечная дата диапазона не превышает количество дней в месяце
         actual_end = min(end, days_in_month)
-        if start > actual_end : # Если начальная дата уже больше конца месяца (например, для 21-20 в феврале)
+        if start > actual_end: # Например, если days_in_month < 21, то диапазон 21-X будет некорректен
             continue
-        range_str = f"{start}-{actual_end}"
-        callback_data = f"{callback_prefix}{start}-{actual_end}"
-        keyboard.append([InlineKeyboardButton(text=range_str, callback_data=callback_data)])
-    return InlineKeyboardMarkup(keyboard)
 
-def generate_specific_date_buttons(year: int, month: int, date_range_start: int, date_range_end: int, callback_prefix: str = "", min_allowed_date: datetime | None = None): # Добавлен min_allowed_date в сигнатуру
-    """Генерирует Inline Keyboard с конкретными датами в выбранном диапазоне."""
-    buttons = []
-    row = []
+        # Скрываем диапазон, если он полностью в прошлом и речь о текущем месяце
+        if year == today.year and month == today.month and actual_end < today.day:
+            logger.info("generate_date_range_buttons: пропустил диапазон %s-%s для %s-%s (уже прошло, сегодня %s)",
+                        start, actual_end, month, year, today.day)
+            continue
 
-    # Устанавливаем min_allowed_date на начало сегодняшнего дня, если он не предоставлен
+        cb = f"{callback_prefix}{start}-{actual_end}"
+        keyboard_buttons.append([InlineKeyboardButton(f"{start}-{actual_end}", callback_data=cb)])
+
+    if not keyboard_buttons:
+        logger.info(f"Для {year}-{month} не найдено подходящих диапазонов дат (сегодня: {today.strftime('%Y-%m-%d')}).")
+        # Используем callback_data, для которого есть обработчик в fallbacks
+        keyboard_buttons.append([InlineKeyboardButton("Нет доступных дат в этом месяце", callback_data="no_valid_dates_error")])
+
+    return InlineKeyboardMarkup(keyboard_buttons)
+
+
+def generate_specific_date_buttons(
+        year: int, month: int, date_range_start: int, date_range_end: int, 
+        callback_prefix: str = "", min_allowed_date: datetime | None = None
+    ):
+    """Генерирует Inline Keyboard с конкретными датами в выбранном диапазоне, фильтруя прошедшие."""
+    buttons_rows = [] # Используем buttons_rows для ясности
+    current_row = []
+
     if min_allowed_date is None:
         min_allowed_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # Генерируем кнопки с датами, по 5 в ряду
+    any_button_created = False
     for day in range(date_range_start, date_range_end + 1):
         try:
             date_obj = datetime(year, month, day)
-            # Проверяем, не является ли дата прошедшей
+            # Проверяем, не является ли дата прошедшей (строго меньше)
             if date_obj < min_allowed_date:
-                # Можно создать неактивную кнопку или кнопку с специальным callback_data
-                # Для простоты пока пропускаем (или можно добавить кнопку с callback="ignore_past_day")
-                # row.append(InlineKeyboardButton(text=f"({date_obj.strftime('%d')})", callback_data="ignore_past_day"))
-                continue
+                continue # Пропускаем прошедшие даты
 
-            date_str_callback = date_obj.strftime("%Y-%m-%d") # Формат для callback_data
-            display_date = date_obj.strftime("%d") # Отображаем только число
+            any_button_created = True
+            date_str_callback = date_obj.strftime("%Y-%m-%d")
+            display_date = date_obj.strftime("%d")
             
-            row.append(InlineKeyboardButton(text=display_date, callback_data=f"{callback_prefix}{date_str_callback}"))
-            if len(row) == 5: # 5 кнопок в ряду
-                buttons.append(row)
-                row = []
+            current_row.append(InlineKeyboardButton(text=display_date, callback_data=f"{callback_prefix}{date_str_callback}"))
+            if len(current_row) == 5: # 5 кнопок в ряду
+                buttons_rows.append(current_row)
+                current_row = []
         except ValueError:
-            # Пропускаем несуществующие даты (например, 30 февраля)
             logger.warning(f"Попытка создать кнопку для несуществующей даты: {year}-{month}-{day}")
             continue
-    if row: # Добавляем оставшиеся кнопки, если их меньше 5
-        buttons.append(row)
+            
+    if current_row: # Добавляем оставшиеся кнопки, если их меньше 5
+        buttons_rows.append(current_row)
     
-    if not buttons and date_range_start <= date_range_end : # Если не было создано ни одной активной кнопки, но диапазон валиден
-        logger.info(f"В диапазоне {year}-{month} ({date_range_start}-{date_range_end}) нет доступных для выбора дат (все прошли).")
-        # Можно добавить кнопку-плейсхолдер или сообщение
-        # buttons.append([InlineKeyboardButton(text="Нет доступных дат", callback_data="no_valid_dates_error")])
-
-    return InlineKeyboardMarkup(buttons)
+    if not any_button_created and date_range_start <= date_range_end: 
+        logger.info(f"В диапазоне {year}-{month} ({date_range_start}-{date_range_end}) нет доступных для выбора дат (все прошли или отфильтрованы).")
+        # Используем callback_data, для которого есть обработчик в fallbacks
+        buttons_rows.append([InlineKeyboardButton("Нет доступных дат в этом диапазоне", callback_data="no_valid_dates_error")])
+        
+    return InlineKeyboardMarkup(buttons_rows)
 
 def get_skip_or_select_keyboard(prompt_message: str, callback_skip_action: str, callback_select_action: str):
     """Клавиатура "Пропустить" или "Выбрать"."""
@@ -198,7 +215,6 @@ def get_skip_dates_keyboard(callback_select_dates: str):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# NEW: Клавиатура для предложения поиска из других аэропортов
 def get_search_other_airports_keyboard(country_name: str):
     """Клавиатура Да/Нет для поиска из других аэропортов указанной страны."""
     keyboard = [

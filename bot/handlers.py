@@ -1,6 +1,6 @@
 # bot/handlers.py
 import logging
-from telegram import Update, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     CommandHandler,
     MessageHandler,
@@ -289,6 +289,8 @@ async def standard_departure_city(update: Update, context: ContextTypes.DEFAULT_
         return config.SELECTING_DEPARTURE_CITY #
     context.user_data['departure_airport_iata'] = iata_code
     context.user_data['departure_city_name'] = city
+    await update.message.reply_text("✅ Город выбран.", reply_markup=ReplyKeyboardRemove())
+   
     await ask_year(update, context, "Выберите год вылета:", callback_prefix=config.CALLBACK_PREFIX_STANDARD + "dep_year_") #
     return config.SELECTING_DEPARTURE_YEAR #
 
@@ -684,6 +686,8 @@ async def flex_departure_city(update: Update, context: ContextTypes.DEFAULT_TYPE
         return config.SELECTING_FLEX_DEPARTURE_CITY #
     context.user_data['departure_airport_iata'] = iata_code
     context.user_data['departure_city_name'] = city
+    await update.message.reply_text("✅ Город выбран.", reply_markup=ReplyKeyboardRemove())
+
     if context.user_data.get('arrival_airport_iata') is None: # "Куда угодно"
         await update.message.reply_text(
             "Указать конкретные даты?",
