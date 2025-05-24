@@ -294,26 +294,85 @@ async def standard_departure_year_selected(update: Update, context: ContextTypes
 
 async def standard_departure_month_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    # ----> ВАЖНЫЙ ЛОГ <----
-    logger.info(f"ДЕБАГ: standard_departure_month_selected ВЫЗВАНА! query.data: {query.data}") 
-    await query.answer()
-    selected_month = int(query.data.replace(config.CALLBACK_PREFIX_STANDARD + "dep_month_", "")) #
+    # Логируем получение колбэка
+    logger.info(f"standard_departure_month_selected: Получен callback: {query.data}")
 
-    # Серверная валидация выбранного месяца (на всякий случай, если клавиатура не отфильтровала)
-    year = context.user_data['departure_year']
-    now = datetime.now()
-    if year == now.year and selected_month < now.month:
-        await query.edit_message_text(text=f"Выбран прошедший месяц ({config.RUSSIAN_MONTHS[selected_month]}). Пожалуйста, выберите корректный месяц.") #
+    try:
+        await query.answer() # Отвечаем на колбэк, чтобы кнопка перестала "грузиться"
+    except Exception as e:
+        logger.error(f"standard_departure_month_selected: Ошибка при вызове query.answer(): {e}")
+        # Если не удалось ответить на колбэк, дальнейшие действия могут быть непредсказуемы
+        # Можно просто завершить или вернуть управление, чтобы избежать других ошибок
+        return ConversationHandler.END # Или другое подходящее состояние
+
+    # Извлекаем номер месяца из callback_data
+    try:
+        # Убедимся, что префикс соответствует тому, что используется при генерации кнопок
+        # (config.CALLBACK_PREFIX_STANDARD + "dep_month_")
+        selected_month_str = query.data.replace(config.CALLBACK_PREFIX_STANDARD + "dep_month_", "") #
+        selected_month = int(selected_month_str)
+    except ValueError:
+        logger.error(f"standard_departure_month_selected: Не удалось извлечь номер месяца из query.data: {query.data}")
+        await query.edit_message_text("Ошибка: неверный формат данных месяца. Пожалуйста, попробуйте еще раз или начните заново /start.")
+        return config.SELECTING_DEPARTURE_YEAR # Возвращаем на шаг выбора года или завершаем
+
+    # Получаем год из user_data
+    try:
+        year = int(context.user_data['departure_year'])
+    except KeyError:
+        logger.error("standard_departure_month_selected: Ключ 'departure_year' не найден в context.user_data.")
+        await query.edit_message_text("Произошла ошибка: год вылета не был сохранен. Пожалуйста, начните поиск заново с /start.")
+        return ConversationHandler.END
+    except ValueError:
+        logger.error(f"standard_departure_month_selected: 'departure_year' в user_data не является числом: {context.user_data.get('departure_year')}")
+        await query.edit_message_text("Произошла ошибка: сохранен некорректный год вылета. Пожалуйста, начните поиск заново с /start.")
+        return ConversationHandler.END
+
+    # Проверка: выбранный месяц не должен быть в прошлом
+    # Используем улучшенную логику сравнения начала месяцев
+    server_now_datetime = datetime.now()
+    # Начало текущего месяца на сервере (полночь первого дня)
+    current_month_start_on_server = server_now_datetime.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    # Начало выбранного пользователем месяца (полночь первого дня)
+    selected_month_start_by_user = datetime(year, selected_month, 1)
+
+    # Логируем данные для проверки
+    logger.info(
+        f"standard_departure_month_selected: Данные для проверки месяца: "
+        f"selected_month_start_by_user={selected_month_start_by_user.strftime('%Y-%m-%d')}, "
+        f"current_month_start_on_server={current_month_start_on_server.strftime('%Y-%m-%d')}, "
+        f"server_now_datetime={server_now_datetime.strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+
+    if selected_month_start_by_user < current_month_start_on_server:
+        russian_months_map = config.RUSSIAN_MONTHS #
+        selected_month_name = russian_months_map.get(selected_month, str(selected_month))
+        logger.warning(
+            f"standard_departure_month_selected: Выбран прошедший месяц ({selected_month_name} {year}) "
+            f"относительно текущего серверного месяца ({current_month_start_on_server.strftime('%B %Y')})."
+        )
+        await query.edit_message_text(
+            text=f"Выбран прошедший месяц ({selected_month_name}). Пожалуйста, выберите корректный месяц."
+        )
+        # Повторно предлагаем выбрать месяц
         await ask_month(update, context,
                       year_for_months=year,
                       message_text=f"Год вылета: {year}. Выберите месяц:",
                       callback_prefix=config.CALLBACK_PREFIX_STANDARD + "dep_month_") #
         return config.SELECTING_DEPARTURE_MONTH #
 
+    # Сохраняем выбранный месяц и его название
     context.user_data['departure_month'] = selected_month
-    month_name = config.RUSSIAN_MONTHS.get(selected_month, "") #
+    russian_months_map = config.RUSSIAN_MONTHS #
+    month_name = russian_months_map.get(selected_month, str(selected_month))
     context.user_data['departure_month_name'] = month_name
-    await ask_date_range(update, context, year, selected_month, f"Выбран: {month_name} {year}. Выберите диапазон дат:", callback_prefix=config.CALLBACK_PREFIX_STANDARD + "dep_range_") #
+
+    logger.info(f"standard_departure_month_selected: Месяц {month_name} {year} выбран. Переход к выбору диапазона дат.")
+
+    # Переходим к выбору диапазона дат
+    await ask_date_range(update, context, year, selected_month,
+                       f"Выбран: {month_name} {year}. Выберите диапазон дат:",
+                       callback_prefix=config.CALLBACK_PREFIX_STANDARD + "dep_range_") #
     return config.SELECTING_DEPARTURE_DATE_RANGE #
 
 async def standard_departure_date_range_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
