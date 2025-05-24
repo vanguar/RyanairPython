@@ -73,7 +73,7 @@ async def ask_arrival_city(
             ),
         )
         # отправляем пользователя на повторный выбор страны прилёта
-        return await ask_arrival_country(update, context, prompt_text="Выберите страну прилёта:")
+        return await ask_arrival_country(update, context, "Выберите страну прилёта:")
 
     # --- показываем клавиатуру городов ---------------------------
     keyboard = keyboards.get_city_reply_keyboard(
@@ -90,7 +90,7 @@ async def ask_arrival_city(
     # сохраняем доступные варианты, если потом понадобятся
     context.user_data["arrival_city_options"] = available_cities
 
-    return config.ASK_ARRIVAL_CITY
+    return config.SELECTING_ARRIVAL_CITY
 
 
 async def ask_year(message_or_update: Update | object, context: ContextTypes.DEFAULT_TYPE, message_text: str, callback_prefix: str = ""):

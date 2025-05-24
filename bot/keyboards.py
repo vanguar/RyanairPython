@@ -36,15 +36,23 @@ def get_country_reply_keyboard():
     keyboard = [country_names[i:i + 3] for i in range(0, len(country_names), 3)]
     return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
 
-def get_city_reply_keyboard(country_name: str):
-    """Клавиатура для выбора города в указанной стране."""
-    if country_name not in COUNTRIES_DATA or not COUNTRIES_DATA[country_name]:
-        logger.warning(f"Нет данных о городах для страны '{country_name}' или страна не найдена.")
-        return ReplyKeyboardMarkup([["Ошибка: нет данных о городах"]], one_time_keyboard=True)
+def get_city_reply_keyboard(
+        country_name: str,
+        override_cities: dict[str, str] | None = None,
+):
+    """
+    Клавиатура городов. Если override_cities передан —
+    строим клавиатуру из него, иначе берём данные из COUNTRIES_DATA.
+    """
+    cities_dict = override_cities or COUNTRIES_DATA.get(country_name, {})
+    if not cities_dict:
+        logger.warning(f"Нет городов для страны «{country_name}»")
+        return ReplyKeyboardMarkup([["Нет доступных городов"]], one_time_keyboard=True)
 
-    city_names = sorted(list(COUNTRIES_DATA[country_name].keys()))
+    city_names = sorted(cities_dict.keys())
     keyboard = [city_names[i:i + 3] for i in range(0, len(city_names), 3)]
     return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+
 
 
 def generate_year_buttons(callback_prefix: str = ""):
