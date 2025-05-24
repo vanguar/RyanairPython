@@ -114,75 +114,107 @@ async def ask_specific_date(update: Update, context: ContextTypes.DEFAULT_TYPE,
         )
     )
 
-async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT_TYPE, flights_by_date: dict): #
+# handlers.py
+from telegram.ext import ConversationHandler
+from datetime import datetime
+
+# ...
+
+async def process_and_send_flights(update: Update,
+                                   context: ContextTypes.DEFAULT_TYPE,
+                                   flights_by_date: dict) -> int:
+    """Формирует и отправляет пользователю найденные рейсы.
+    Если ничего не подошло по цене/фильтрам, показывает MSG_NO_FLIGHTS_FOUND
+    и (опционально) предлагает поискать из других аэропортов.
+    """
     chat_id = update.effective_chat.id
     context.user_data.pop('remaining_flights_to_show', None)
 
-    if not flights_by_date:
-        await context.bot.send_message(chat_id=chat_id, text=config.MSG_NO_FLIGHTS_FOUND) #
-        dep_country = context.user_data.get('departure_country')
-        dep_airport_iata = context.user_data.get('departure_airport_iata')
-        if dep_country and dep_airport_iata and config.COUNTRIES_DATA.get(dep_country) and \
-           len(config.COUNTRIES_DATA[dep_country]) > 1: #
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"Хотите поискать вылеты из других аэропортов в стране {dep_country} по этому же направлению и датам?", #
-                reply_markup=keyboards.get_search_other_airports_keyboard(dep_country) #
-            )
-            return config.ASK_SEARCH_OTHER_AIRPORTS #
-        await context.bot.send_message(
-            chat_id=chat_id, text="Что дальше?",
-            reply_markup=keyboards.get_yes_no_keyboard( #
-                yes_callback="prompt_new_search_type", no_callback="end_search_session",
-                yes_text="✅ Начать новый поиск", no_text="❌ Закончить"
-            )
-        )
-        return ConversationHandler.END
+    # ---------- 1. Собираем все рейсы в текст ----------
+    flights_message_parts: list[str] = []
+    total_flights_shown_count = 0
 
-    else:
-        await context.bot.send_message(chat_id=chat_id, text=config.MSG_FLIGHTS_FOUND_SEE_BELOW) #
-        total_flights_shown_count = 0
-        flights_message_parts = []
-        sorted_dates = sorted(flights_by_date.keys())
-
-        for flight_date_str in sorted_dates:
-            flights_on_this_date = flights_by_date[flight_date_str]
-            if not flights_on_this_date:
+    if flights_by_date:
+        for date_key in sorted(flights_by_date.keys()):
+            flights_on_date = flights_by_date[date_key]
+            if not flights_on_date:
                 continue
+
+            # Заголовок даты
             try:
-                date_obj = datetime.strptime(flight_date_str, "%Y-%m-%d")
-                formatted_date_header = f"\n--- 📅 *{date_obj.strftime('%d %B %Y (%A)')}* ---\n"
-            except ValueError: # Fallback for "unknown_date" or other non-standard keys
-                formatted_date_header = f"\n--- 📅 *{flight_date_str}* ---\n"
+                d_obj = datetime.strptime(date_key, "%Y-%m-%d")
+                header = f"\n--- 📅 *{d_obj.strftime('%d %B %Y (%A)')}* ---\n"
+            except ValueError:                       # ключ вида 'unknown_date'
+                header = f"\n--- 📅 *{date_key}* ---\n"
 
-            flights_message_parts.append(formatted_date_header)
+            flights_message_parts.append(header)
 
-            for i, flight in enumerate(flights_on_this_date):
-                if i < config.FLIGHTS_CHUNK_SIZE: #
-                    formatted_flight = helpers.format_flight_details(flight) #
-                    flights_message_parts.append(formatted_flight)
-                    total_flights_shown_count += 1
-                else:
-                    flights_message_parts.append(f"...и еще {len(flights_on_this_date) - i} рейс(ов) на эту дату.")
+            # Список рейсов в пределах FLIGHTS_CHUNK_SIZE
+            for i, flight in enumerate(flights_on_date):
+                if i >= config.FLIGHTS_CHUNK_SIZE:
+                    flights_message_parts.append(
+                        f"...и еще {len(flights_on_date) - i} рейс(ов) на эту дату."
+                    )
                     break
 
+                flights_message_parts.append(helpers.format_flight_details(flight))
+                total_flights_shown_count += 1
+
+            # Добавляем пустую строку-разделитель, если последняя строка не «…и ещё»
             if not flights_message_parts[-1].endswith("рейс(ов) на эту дату."):
-                 flights_message_parts.append("\n")
+                flights_message_parts.append("\n")
 
-        if flights_message_parts:
-            full_message = "".join(flights_message_parts)
-            max_length = 4096
-            for i in range(0, len(full_message), max_length):
-                await context.bot.send_message(chat_id=chat_id, text=full_message[i:i+max_length], parse_mode='Markdown')
+    # ---------- 2. Если ничего не показали ----------
+    if total_flights_shown_count == 0:
+        await context.bot.send_message(chat_id=chat_id,
+                                       text=config.MSG_NO_FLIGHTS_FOUND)
 
-        if total_flights_shown_count == 0 and any(flights_by_date.values()):
-             await context.bot.send_message(chat_id=chat_id, text="Найдены рейсы, но произошла ошибка при отображении.")
+        dep_country = context.user_data.get("departure_country")
+        dep_airport_iata = context.user_data.get("departure_airport_iata")
 
+        # есть ли в стране другие аэропорты, кроме выбранного?
+        if dep_country and dep_airport_iata and \
+           len(config.COUNTRIES_DATA.get(dep_country, [])) > 1:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=(f"Хотите поискать вылеты из других аэропортов в стране {dep_country} "
+                      f"по тем же датам и направлению?"),
+                reply_markup=keyboards.get_search_other_airports_keyboard(dep_country)
+            )
+            return config.ASK_SEARCH_OTHER_AIRPORTS
+
+        # иначе просто предложить новый поиск / завершить
+        await context.bot.send_message(
+            chat_id=chat_id, text="Что дальше?",
+            reply_markup=keyboards.get_yes_no_keyboard(
+                yes_callback="prompt_new_search_type",
+                no_callback="end_search_session",
+                yes_text="✅ Начать новый поиск",
+                no_text="❌ Закончить"
+            )
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    # ---------- 3. Рейсы найдены → отправляем ----------
+    await context.bot.send_message(chat_id=chat_id,
+                                   text=config.MSG_FLIGHTS_FOUND_SEE_BELOW)
+
+    full_text = "".join(flights_message_parts)
+    MAX_LEN = 4096
+    for start in range(0, len(full_text), MAX_LEN):
+        await context.bot.send_message(chat_id=chat_id,
+                                       text=full_text[start:start + MAX_LEN],
+                                       parse_mode="Markdown")
+
+    # ---------- 4. Завершающий вопрос ----------
     await context.bot.send_message(
         chat_id=chat_id, text="Что дальше?",
-        reply_markup=keyboards.get_yes_no_keyboard( #
-            yes_callback="prompt_new_search_type", no_callback="end_search_session",
-            yes_text="✅ Начать новый поиск", no_text="❌ Закончить"
+        reply_markup=keyboards.get_yes_no_keyboard(
+            yes_callback="prompt_new_search_type",
+            no_callback="end_search_session",
+            yes_text="✅ Начать новый поиск",
+            no_text="❌ Закончить"
         )
     )
     context.user_data.clear()
