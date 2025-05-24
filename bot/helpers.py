@@ -26,7 +26,7 @@ def format_flight_details(flight) -> str:
                 f"📍 *Маршрут*: {getattr(flight, 'originFull', 'N/A')} -> {getattr(flight, 'destinationFull', 'N/A')}\n"
                 f"🕒 *Вылет*: {departure_time_str}\n"
                 f"💰 *Цена*: {Decimal(str(flight.price)).quantize(Decimal('0.01'))} {getattr(flight, 'currency', 'N/A')}\n"
-            ) + "\n--------------------------\n"
+            ) + "\n──────── ✈️ ────────\n"
         elif hasattr(flight, 'outbound') and flight.outbound and hasattr(flight.outbound, 'price') and \
              hasattr(flight, 'inbound') and flight.inbound and hasattr(flight.inbound, 'price'): # Рейс туда и обратно
             
@@ -65,7 +65,7 @@ def format_flight_details(flight) -> str:
                 f"  - *Вылет*: {in_departure_time_str}\n"
                 f"  - *Цена*: {Decimal(str(inbound.price)).quantize(Decimal('0.01'))} {getattr(inbound, 'currency', 'N/A')}\n\n"
                 f"💵 *Общая цена*: {total_price.quantize(Decimal('0.01'))} {getattr(outbound, 'currency', 'N/A')}\n"
-            ) + "\n--------------------------\n"
+            ) + "\n──────── ✈️ ────────\n"
         else:
             logger.warning(f"Не удалось отформатировать рейс, неизвестная структура: {flight}")
             return "Не удалось отобразить информацию о рейсе."
