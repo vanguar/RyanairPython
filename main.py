@@ -1,6 +1,6 @@
 # main.py
 import logging
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, Application # MODIFIED: Added Application, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, Application, Defaults # MODIFIED: Added Application, ContextTypes
 from telegram import Update # MODIFIED: Added Update
 
 # Импортируем конфигурацию и обработчики
@@ -59,7 +59,9 @@ def main() -> None:
     logger.info("Запуск бота...")
 
     # Создание экземпляра Application
-    application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build() # [cite: 1]
+    application = Application.builder().token(config.TELEGRAM_BOT_TOKEN)\
+        .defaults(Defaults(parse_mode='MarkdownV2'))\
+        .build()
 
     # Получение ConversationHandler
     conv_handler = create_conversation_handler() #

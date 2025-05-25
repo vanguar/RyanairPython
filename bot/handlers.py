@@ -794,38 +794,58 @@ async def flex_max_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return config.ASK_FLEX_DEPARTURE_AIRPORT
 
 async def flex_ask_departure_airport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # (без изменений в основной логике, кроме возможного edit_message_text)
     query = update.callback_query
     await query.answer()
+
     if query.data == config.CALLBACK_PREFIX_FLEX + "ask_dep_yes":
-        if query.message: await query.edit_message_text(text="Аэропорт вылета: ДА")
-        # ask_departure_country отправит новое сообщение с ReplyKeyboard
+        if query.message:
+            original_message_text_line = query.message.text.split('\n')[0]
+            await query.edit_message_text(
+                text=f"{original_message_text_line}\nХорошо, выберите страну вылета:",
+                reply_markup=None
+            )
+        
         await ask_departure_country(update, context, "Выберите страну вылета:")
         return config.SELECTING_FLEX_DEPARTURE_COUNTRY
-    else: # ask_dep_no
-        if query.message: await query.edit_message_text(text="Аэропорт вылета: НЕТ (любой доступный).")
-        context.user_data['departure_airport_iata'] = None # Явно указываем, что аэропорт вылета не выбран
-        logger.info("Гибкий поиск: пользователь пропустил аэропорт вылета.")
+    else:  # Пользователь выбрал НЕ указывать аэропорт вылета
         
-        # Если это был "Куда угодно" (arrival_airport_iata тоже None), то переходим к датам
-        if context.user_data.get('arrival_airport_iata') is None : 
-            # Отправляем новое сообщение, т.к. предыдущее было отредактировано
-            await context.bot.send_message(chat_id=update.effective_chat.id,
-                text="Указать конкретные даты?",
-                reply_markup=keyboards.get_skip_dates_keyboard(
-                    callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes"
-                ))
-            return config.ASK_FLEX_DATES
+        logger.info("Гибкий поиск: пользователь попытался пропустить указание аэропорта вылета, что не поддерживается.")
+
+        # ИСПРАВЛЕНО: Добавлен пробел перед точкой в конце жирного выделения
+        msg = (
+            "⚠️ **Для поиска рейсов Ryanair всегда необходимо указать конкретный аэропорт вылета** .\n\n" 
+            "Поиск из «любого доступного аэропорта» невозможен.\n\n"
+            "Нажмите /start, чтобы начать новый поиск и указать аэропорт вылета."
+        )
+
+        if query.message:
+            await query.edit_message_text(
+                text=msg,
+                reply_markup=None, 
+                parse_mode='MarkdownV2' 
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=msg,
+                parse_mode='MarkdownV2'
+            )
+
+        keys_to_pop = [
+            'flight_type_one_way',
+            'max_price',
+            'departure_airport_iata',
+            'arrival_airport_iata',
+            'departure_country',
+            'departure_city_name',
+            'arrival_country',
+            'arrival_city_name',
+        ]
+        logger.debug(f"Очистка user_data для пользователя {update.effective_user.id}, ключи: {keys_to_pop}")
+        for key in keys_to_pop:
+            context.user_data.pop(key, None)
         
-        # Иначе (если arrival_airport_iata НЕ None, т.е. это не "Куда угодно" ИЛИ "Куда угодно" но с departure_airport=Да)
-        # нужно спросить про аэропорт прилета
-        await context.bot.send_message(chat_id=update.effective_chat.id,
-            text="Указать аэропорт прилёта?",
-            reply_markup=keyboards.get_yes_no_keyboard(
-                yes_callback=config.CALLBACK_PREFIX_FLEX + "ask_arr_yes",
-                no_callback=config.CALLBACK_PREFIX_FLEX + "ask_arr_no"
-            ))
-        return config.ASK_FLEX_ARRIVAL_AIRPORT
+        return ConversationHandler.END
 
 
 async def flex_departure_country(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
