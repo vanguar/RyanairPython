@@ -59,9 +59,7 @@ def main() -> None:
     logger.info("Запуск бота...")
 
     # Создание экземпляра Application
-    application = Application.builder().token(config.TELEGRAM_BOT_TOKEN)\
-        .defaults(Defaults(parse_mode='MarkdownV2'))\
-        .build()
+    application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build() # [cite: 1]
 
     # Получение ConversationHandler
     conv_handler = create_conversation_handler() #
