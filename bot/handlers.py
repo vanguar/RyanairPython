@@ -309,16 +309,34 @@ async def end_search_session_callback(update: Update, context: ContextTypes.DEFA
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # (без изменений)
-    context.user_data.clear() # Очищаем данные при /start
-    if update.message:
-        await update.message.reply_text(config.MSG_WELCOME, reply_markup=keyboards.get_main_menu_keyboard())
-    elif update.callback_query: # Если /start вызван из callback кнопки (маловероятно, но для полноты)
+    """Обрабатывает /start, выводит приветствие и главное меню."""
+
+    # сбрасываем возможное состояние предыдущих диалогов
+    context.user_data.clear()
+
+    # экранируем спец-символы Markdown V2 ( ! . ( ) _ * и т.д. )
+    welcome = escape_markdown(config.MSG_WELCOME, version=2)
+
+    if update.message:                                        # обычная команда /start
+        await update.message.reply_text(
+            welcome,
+            reply_markup=keyboards.get_main_menu_keyboard()
+        )
+
+    elif update.callback_query:                               # редкий случай /start из inline-кнопки
         await update.callback_query.answer()
-        if update.callback_query.message:
-            await update.callback_query.edit_message_text(config.MSG_WELCOME, reply_markup=keyboards.get_main_menu_keyboard())
-        elif update.effective_chat:
-             await context.bot.send_message(chat_id=update.effective_chat.id, text=config.MSG_WELCOME, reply_markup=keyboards.get_main_menu_keyboard())
+
+        if update.callback_query.message:                     # редактируем то же сообщение
+            await update.callback_query.edit_message_text(
+                welcome,
+                reply_markup=keyboards.get_main_menu_keyboard()
+            )
+        else:                                                 # если оригинального сообщения нет
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=welcome,
+                reply_markup=keyboards.get_main_menu_keyboard()
+            )
 
 async def start_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # (без изменений)
@@ -794,58 +812,38 @@ async def flex_max_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return config.ASK_FLEX_DEPARTURE_AIRPORT
 
 async def flex_ask_departure_airport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    # (без изменений в основной логике, кроме возможного edit_message_text)
     query = update.callback_query
     await query.answer()
-
     if query.data == config.CALLBACK_PREFIX_FLEX + "ask_dep_yes":
-        if query.message:
-            original_message_text_line = query.message.text.split('\n')[0]
-            await query.edit_message_text(
-                text=f"{original_message_text_line}\nХорошо, выберите страну вылета:",
-                reply_markup=None
-            )
-        
+        if query.message: await query.edit_message_text(text="Аэропорт вылета: ДА")
+        # ask_departure_country отправит новое сообщение с ReplyKeyboard
         await ask_departure_country(update, context, "Выберите страну вылета:")
         return config.SELECTING_FLEX_DEPARTURE_COUNTRY
-    else:  # Пользователь выбрал НЕ указывать аэропорт вылета
+    else: # ask_dep_no
+        if query.message: await query.edit_message_text(text="Аэропорт вылета: НЕТ (любой доступный).")
+        context.user_data['departure_airport_iata'] = None # Явно указываем, что аэропорт вылета не выбран
+        logger.info("Гибкий поиск: пользователь пропустил аэропорт вылета.")
         
-        logger.info("Гибкий поиск: пользователь попытался пропустить указание аэропорта вылета, что не поддерживается.")
-
-        # ИСПРАВЛЕНО: Добавлен пробел перед точкой в конце жирного выделения
-        msg = (
-            "⚠️ **Для поиска рейсов Ryanair всегда необходимо указать конкретный аэропорт вылета** .\n\n" 
-            "Поиск из «любого доступного аэропорта» невозможен.\n\n"
-            "Нажмите /start, чтобы начать новый поиск и указать аэропорт вылета."
-        )
-
-        if query.message:
-            await query.edit_message_text(
-                text=msg,
-                reply_markup=None, 
-                parse_mode='MarkdownV2' 
-            )
-        else:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=msg,
-                parse_mode='MarkdownV2'
-            )
-
-        keys_to_pop = [
-            'flight_type_one_way',
-            'max_price',
-            'departure_airport_iata',
-            'arrival_airport_iata',
-            'departure_country',
-            'departure_city_name',
-            'arrival_country',
-            'arrival_city_name',
-        ]
-        logger.debug(f"Очистка user_data для пользователя {update.effective_user.id}, ключи: {keys_to_pop}")
-        for key in keys_to_pop:
-            context.user_data.pop(key, None)
+        # Если это был "Куда угодно" (arrival_airport_iata тоже None), то переходим к датам
+        if context.user_data.get('arrival_airport_iata') is None : 
+            # Отправляем новое сообщение, т.к. предыдущее было отредактировано
+            await context.bot.send_message(chat_id=update.effective_chat.id,
+                text="Указать конкретные даты?",
+                reply_markup=keyboards.get_skip_dates_keyboard(
+                    callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes"
+                ))
+            return config.ASK_FLEX_DATES
         
-        return ConversationHandler.END
+        # Иначе (если arrival_airport_iata НЕ None, т.е. это не "Куда угодно" ИЛИ "Куда угодно" но с departure_airport=Да)
+        # нужно спросить про аэропорт прилета
+        await context.bot.send_message(chat_id=update.effective_chat.id,
+            text="Указать аэропорт прилёта?",
+            reply_markup=keyboards.get_yes_no_keyboard(
+                yes_callback=config.CALLBACK_PREFIX_FLEX + "ask_arr_yes",
+                no_callback=config.CALLBACK_PREFIX_FLEX + "ask_arr_no"
+            ))
+        return config.ASK_FLEX_ARRIVAL_AIRPORT
 
 
 async def flex_departure_country(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
