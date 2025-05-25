@@ -5,7 +5,7 @@
     "Billund": "BLL",
     "Copenhagen": "CPH"
   },
-  "United Kingdom": {
+  "Великобритания": {
     "Aberdeen": "ABZ",
     "Birmingham": "BHX",
     "Bournemouth": "BOH",
@@ -23,11 +23,11 @@
     "Newcastle": "NCL",
     "Newquay": "NQY"
   },
-  "Spain": {
+  "Испания": {
     "Lanzarote": "ACE",
     "Malaga": "AGP",
     "Alicante": "ALC",
-    "Barcelona": "BCN",
+    "Барселона": "BCN",
     "Castellon": "CDT",
     "Fuerteventura": "FUE",
     "Girona": "GRO",
@@ -64,7 +64,7 @@
     "Tangier": "TNG",
     "Tétouan": "TTU"
   },
-  "Italy": {
+  "Италия": {
     "Alghero": "AHO",
     "Ancona": "AOI",
     "Brindisi": "BDS",
@@ -90,7 +90,7 @@
     "Trapani": "TPS",
     "Turin": "TRN",
     "Trieste": "TRS",
-    "Venice": "VCE",
+    "Венеция": "VCE",
     "Verona": "VRN"
   },
   "Jordan": {
@@ -128,8 +128,8 @@
     "Thessaloniki": "SKG",
     "Zakynthos": "ZTH"
   },
-  "Germany": {
-    "Berlin": "BER",
+  "Германия": {
+    "Берлин": "BER",
     "Bremen": "BRE",
     "Cologne": "CGN",
     "Dresden": "DRS",
@@ -143,7 +143,7 @@
     "Dusseldorf": "NRN",
     "Nuremberg": "NUE"
   },
-  "France": {
+  "Франция": {
     "Brest": "BES",
     "Biarritz": "BIQ",
     "Bordeaux": "BOD",
