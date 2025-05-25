@@ -812,38 +812,55 @@ async def flex_max_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return config.ASK_FLEX_DEPARTURE_AIRPORT
 
 async def flex_ask_departure_airport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # (без изменений в основной логике, кроме возможного edit_message_text)
+    """
+    Шаг гибкого поиска: спрашиваем, будет ли указан конкретный аэропорт вылета.
+    Если пользователь ответил «нет» – сразу прерываем сценарий, т.к. Ryanair API
+    без departure_airport не работает.
+    """
     query = update.callback_query
     await query.answer()
+
+    # --- пользователь согласен указать аэропорт вылета ---
     if query.data == config.CALLBACK_PREFIX_FLEX + "ask_dep_yes":
-        if query.message: await query.edit_message_text(text="Аэропорт вылета: ДА")
-        # ask_departure_country отправит новое сообщение с ReplyKeyboard
+        if query.message:
+            # убираем inline-кнопки «да/нет» и просим выбрать страну
+            await query.edit_message_text(
+                text="Хорошо, выберите страну вылета:",
+                reply_markup=None
+            )
+
+        # дальше – стандартный выбор страны
         await ask_departure_country(update, context, "Выберите страну вылета:")
         return config.SELECTING_FLEX_DEPARTURE_COUNTRY
-    else: # ask_dep_no
-        if query.message: await query.edit_message_text(text="Аэропорт вылета: НЕТ (любой доступный).")
-        context.user_data['departure_airport_iata'] = None # Явно указываем, что аэропорт вылета не выбран
-        logger.info("Гибкий поиск: пользователь пропустил аэропорт вылета.")
-        
-        # Если это был "Куда угодно" (arrival_airport_iata тоже None), то переходим к датам
-        if context.user_data.get('arrival_airport_iata') is None : 
-            # Отправляем новое сообщение, т.к. предыдущее было отредактировано
-            await context.bot.send_message(chat_id=update.effective_chat.id,
-                text="Указать конкретные даты?",
-                reply_markup=keyboards.get_skip_dates_keyboard(
-                    callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes"
-                ))
-            return config.ASK_FLEX_DATES
-        
-        # Иначе (если arrival_airport_iata НЕ None, т.е. это не "Куда угодно" ИЛИ "Куда угодно" но с departure_airport=Да)
-        # нужно спросить про аэропорт прилета
-        await context.bot.send_message(chat_id=update.effective_chat.id,
-            text="Указать аэропорт прилёта?",
-            reply_markup=keyboards.get_yes_no_keyboard(
-                yes_callback=config.CALLBACK_PREFIX_FLEX + "ask_arr_yes",
-                no_callback=config.CALLBACK_PREFIX_FLEX + "ask_arr_no"
-            ))
-        return config.ASK_FLEX_ARRIVAL_AIRPORT
+
+    # --- пользователь ответил «нет» ---
+    logger.info(
+        "Гибкий поиск: пользователь попытался пропустить аэропорт вылета – сценарий остановлен."
+    )
+
+    warn_text = (
+        "⚠️ Для поиска рейсов Ryanair нужно указать конкретный аэропорт вылета.\n\n"
+        "Нажмите /start и начните новый поиск, указав аэропорт."
+    )
+
+    if query.message:
+        # заменяем сообщение c кнопками на предупреждение
+        await query.edit_message_text(text=warn_text, reply_markup=None)
+    else:
+        # fallback (на всякий случай)
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=warn_text)
+
+    # чистим только ключи текущего гибкого поиска
+    for k in (
+        'departure_airport_iata', 'arrival_airport_iata',
+        'flight_type_one_way', 'max_price',
+        'departure_country', 'departure_city_name',
+        'arrival_country', 'arrival_city_name',
+    ):
+        context.user_data.pop(k, None)
+
+    return ConversationHandler.END
+
 
 
 async def flex_departure_country(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
