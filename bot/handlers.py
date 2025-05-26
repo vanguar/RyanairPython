@@ -560,33 +560,69 @@ async def standard_arrival_country(update: Update, context: ContextTypes.DEFAULT
     await update.message.reply_text("Выберите город прилёта:", reply_markup=keyboards.get_city_reply_keyboard(country)) #
     return config.S_SELECTING_ARRIVAL_CITY
 
+# bot/handlers.py
+
+# bot/handlers.py
+
 async def standard_arrival_city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    # Если пришло пустое сообщение (это полезная проверка, оставляем)
+    if not update.message or not update.message.text:
+        logger.warning("standard_arrival_city: пустое сообщение от %s", update.effective_user.id if update.effective_user else "unknown user")
+        await update.message.reply_text(
+            "Пожалуйста, выберите город прилёта из списка или введите его название.\n"
+            "Для корректного продолжения, выберите страну прилёта:",
+            reply_markup=keyboards.get_country_reply_keyboard()
+        )
+        return config.S_SELECTING_ARRIVAL_COUNTRY
+
     city = update.message.text
     country = context.user_data.get('arrival_country')
     if not country:
-        await update.message.reply_text("Ошибка: страна прилёта не определена. Начните заново /start.")
+        logger.error("standard_arrival_city: нет arrival_country в user_data для пользователя %s", update.effective_user.id if update.effective_user else "unknown user")
+        await update.message.reply_text(
+            "Произошла ошибка: страна прилёта не определена. Начните заново /start.",
+            reply_markup=ReplyKeyboardRemove()
+        )
         return ConversationHandler.END
+
     iata_code = helpers.get_airport_iata(country, city)
+
+    # Город не найден - ИСПРАВЛЕНО
     if not iata_code:
-        await update.message.reply_text("Город не найден! Пожалуйста, выберите из списка.", reply_markup=keyboards.get_city_reply_keyboard(country))
-        return config.S_SELECTING_ARRIVAL_CITY
+        logger.info("standard_arrival_city: Город '%s' не найден в стране '%s' для пользователя %s.", city, country, update.effective_user.id if update.effective_user else "unknown user")
+        await update.message.reply_text(
+            f"Город '{escape_markdown(city, version=2)}' не найден в стране '{escape_markdown(country, version=2)}'.\n"
+            "Пожалуйста, выберите другую страну прилёта:",
+            reply_markup=keyboards.get_country_reply_keyboard(), # Клавиатура стран
+            parse_mode='MarkdownV2'
+        )
+        return config.S_SELECTING_ARRIVAL_COUNTRY # Возврат к выбору СТРАНЫ
+
+    # Город совпадает с вылетом - ИСПРАВЛЕНО
     if iata_code == context.user_data.get('departure_airport_iata'):
-        await update.message.reply_text("Аэропорт прилёта не может совпадать с аэропортом вылета. Выберите другой город.", reply_markup=keyboards.get_city_reply_keyboard(country))
-        return config.S_SELECTING_ARRIVAL_CITY
+        logger.info("standard_arrival_city: Город прилёта '%s (%s)' совпадает с городом вылета для пользователя %s.", city, iata_code, update.effective_user.id if update.effective_user else "unknown user")
+        await update.message.reply_text(
+            "Аэропорт прилёта не может совпадать с аэропортом вылета.\n"
+            "Пожалуйста, выберите другую страну прилёта:",
+            reply_markup=keyboards.get_country_reply_keyboard() # Клавиатура стран
+        )
+        return config.S_SELECTING_ARRIVAL_COUNTRY # Возврат к выбору СТРАНЫ
+
+    # Всё ок — сохраняем и идём дальше
     context.user_data['arrival_airport_iata'] = iata_code
     context.user_data['arrival_city_name'] = city
-    
-    await update.message.reply_text(f"Город прилёта: {city}.", reply_markup=ReplyKeyboardRemove())
-    
-    if context.user_data.get('flight_type_one_way', True):
-        context.user_data['current_search_flow'] = config.FLOW_STANDARD
+    logger.info("standard_arrival_city: Выбран город прилёта '%s (%s)' в стране '%s' для пользователя %s.", city, iata_code, country, update.effective_user.id if update.effective_user else "unknown user")
+    await update.message.reply_text(f"Город прилёта: {escape_markdown(city, version=2)}.", reply_markup=ReplyKeyboardRemove(), parse_mode='MarkdownV2')
+
+    context.user_data['current_search_flow'] = config.FLOW_STANDARD
+    if context.user_data.get('flight_type_one_way'):
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
             text=config.MSG_PRICE_OPTION_PROMPT,
             reply_markup=keyboards.get_price_options_keyboard()
         )
-        return config.SELECTING_PRICE_OPTION 
-    else: 
+        return config.SELECTING_PRICE_OPTION
+    else: # Для рейса туда-обратно, после города прилета должен идти выбор дат возврата
         await ask_year(update, context, "Выберите год обратного вылета:", callback_prefix=config.CALLBACK_PREFIX_STANDARD + "ret_year_")
         return config.S_SELECTING_RETURN_YEAR
 
@@ -814,29 +850,71 @@ async def flex_arrival_country(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text("Выберите город прилёта:", reply_markup=keyboards.get_city_reply_keyboard(country))
     return config.SELECTING_FLEX_ARRIVAL_CITY
 
+# bot/handlers.py
+
+# bot/handlers.py
+
 async def flex_arrival_city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    city = update.message.text 
-    country = context.user_data.get('arrival_country')
+    # Если пришло пустое сообщение
+    if not update.message or not update.message.text:
+        logger.warning("flex_arrival_city: пустое сообщение от %s", update.effective_user.id if update.effective_user else "unknown user")
+        await update.message.reply_text(
+            "Пожалуйста, выберите город прилёта из списка или введите его название.\n"
+            "Для корректного продолжения, выберите страну прилёта:",
+            reply_markup=keyboards.get_country_reply_keyboard()
+        )
+        return config.SELECTING_FLEX_ARRIVAL_COUNTRY
+
+    city = update.message.text
+    # В вашем flex_arrival_country страна сохраняется в 'arrival_country'
+    country = context.user_data.get('arrival_country') 
     if not country:
-        await update.message.reply_text("Ошибка: страна прилёта не определена. Начните заново /start.")
+        logger.error("flex_arrival_city: нет 'arrival_country' в user_data для гибкого поиска, пользователь %s", update.effective_user.id if update.effective_user else "unknown user")
+        await update.message.reply_text(
+            "Произошла ошибка: страна прилёта для гибкого поиска не определена. Начните заново /start.",
+            reply_markup=ReplyKeyboardRemove()
+        )
         return ConversationHandler.END
+
     iata_code = helpers.get_airport_iata(country, city)
+
+    # Город не найден - ИСПРАВЛЕНО
     if not iata_code:
-        await update.message.reply_text("Город не найден! Пожалуйста, выберите из списка.", reply_markup=keyboards.get_city_reply_keyboard(country))
-        return config.SELECTING_FLEX_ARRIVAL_CITY
-    if context.user_data.get('departure_airport_iata') and iata_code == context.user_data['departure_airport_iata']:
-        await update.message.reply_text("Аэропорт прилёта не может совпадать с аэропортом вылета. Выберите другой город.", reply_markup=keyboards.get_city_reply_keyboard(country))
-        return config.SELECTING_FLEX_ARRIVAL_CITY
-        
+        logger.info("flex_arrival_city: Город '%s' не найден в стране '%s' для пользователя %s.", city, country, update.effective_user.id if update.effective_user else "unknown user")
+        await update.message.reply_text(
+            f"Город '{escape_markdown(city, version=2)}' не найден в стране '{escape_markdown(country, version=2)}'.\n"
+            "Пожалуйста, выберите другую страну прилёта:",
+            reply_markup=keyboards.get_country_reply_keyboard(), # Клавиатура стран
+            parse_mode='MarkdownV2'
+        )
+        return config.SELECTING_FLEX_ARRIVAL_COUNTRY # Возврат к выбору СТРАНЫ
+
+    # Совпадение с вылетом - ИСПРАВЛЕНО
+    departure_iata = context.user_data.get('departure_airport_iata')
+    if departure_iata and iata_code == departure_iata: # Проверяем, что departure_iata существует
+        logger.info("flex_arrival_city: Город прилёта '%s (%s)' совпадает с городом вылета для пользователя %s.", city, iata_code, update.effective_user.id if update.effective_user else "unknown user")
+        await update.message.reply_text(
+            "Аэропорт прилёта не может совпадать с аэропортом вылета.\n"
+            "Пожалуйста, выберите другую страну прилёта:",
+            reply_markup=keyboards.get_country_reply_keyboard() # Клавиатура стран
+        )
+        return config.SELECTING_FLEX_ARRIVAL_COUNTRY # Возврат к выбору СТРАНЫ
+    
+    # Всё ок, сохраняем с унифицированными ключами (как в вашем коде)
     context.user_data['arrival_airport_iata'] = iata_code
     context.user_data['arrival_city_name'] = city
-    await update.message.reply_text(f"Город прилёта: {city}.", reply_markup=ReplyKeyboardRemove())
+    logger.info("flex_arrival_city: Выбран город прилёта '%s (%s)' в стране '%s' для пользователя %s.", city, iata_code, country, update.effective_user.id if update.effective_user else "unknown user")
+    
+    await update.message.reply_text(f"Город прилёта (гибкий поиск): {escape_markdown(city, version=2)}.", reply_markup=ReplyKeyboardRemove(), parse_mode='MarkdownV2')
 
-    await context.bot.send_message(chat_id=update.effective_chat.id,
+    # После выбора города прилета в гибком поиске, переходим к запросу дат
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
         text="Указать конкретные даты?",
         reply_markup=keyboards.get_skip_dates_keyboard(
             callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes"
-        ))
+        )
+    )
     return config.ASK_FLEX_DATES
 
 async def flex_ask_dates(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
