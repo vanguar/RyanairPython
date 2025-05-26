@@ -47,50 +47,69 @@ async def launch_flight_search(update: Update, context: ContextTypes.DEFAULT_TYP
     """
     effective_chat_id = update.effective_chat.id
     try:
-        price_preference: Union[PriceChoice, None] = context.user_data.get('price_preference_choice')
-        user_max_price: Union[Decimal, None] = context.user_data.get('max_price')
-
+        # Получение параметров из user_data
         dep_iata: Union[str, None] = context.user_data.get('departure_airport_iata')
         arr_iata: Union[str, None] = context.user_data.get('arrival_airport_iata')
         dep_date_str: Union[str, None] = context.user_data.get('departure_date')
         ret_date_str: Union[str, None] = context.user_data.get('return_date')
+        user_max_price: Union[Decimal, None] = context.user_data.get('max_price')
+        price_preference: Union[PriceChoice, None] = context.user_data.get('price_preference_choice')
         is_one_way: bool = context.user_data.get('flight_type_one_way', True)
+        current_flow: Union[str, None] = context.user_data.get('current_search_flow')
+
+
+        # === Логирование параметров перед вызовом API (предложение AI-B) ===
+        logger.info("=== Запуск launch_flight_search ===")
+        logger.info(
+            "Параметры: price_pref=%s, user_max_price=%s, dep_iata=%s, arr_iata=%s, dep_date=%s, ret_date=%s, one_way=%s, current_flow=%s",
+            price_preference, user_max_price, dep_iata, arr_iata, dep_date_str, ret_date_str, is_one_way, current_flow
+        )
+        # logger.info(f"Полный user_data (часть): {dict(list(context.user_data.items())[:10])}") # Опционально для более детального лога
+        # ====================================================================
 
         if not dep_iata:
             msg = "Ошибка: Аэропорт вылета не был указан. Пожалуйста, начните поиск заново: /start"
             if update.callback_query and update.callback_query.message: 
                 try: await update.callback_query.edit_message_text(msg)
                 except Exception: await context.bot.send_message(effective_chat_id, msg)
-            elif update.message: # Если вызов из MessageHandler
+            elif update.message:
                 await update.message.reply_text(msg)
-            else: # Общий случай, если update не имеет message или callback_query
+            else:
                 await context.bot.send_message(effective_chat_id, msg)
             return ConversationHandler.END
 
-        # Сообщение о начале поиска лучше отправлять один раз перед вызовом API
         await context.bot.send_message(chat_id=effective_chat_id, text=config.MSG_SEARCHING_FLIGHTS)
 
         all_flights_data: Dict[str, List[Any]] = await flight_api.find_flights_with_fallback(
             departure_airport_iata=dep_iata,
             arrival_airport_iata=arr_iata,
             departure_date_str=dep_date_str,
-            max_price=user_max_price,
+            max_price=user_max_price, # Это значение user_max_price
             return_date_str=ret_date_str,
             is_one_way=is_one_way
         )
+        
+        # Логирование результата от API
+        logger.info(f"API flight_api.find_flights_with_fallback вернул: {'Данные есть (ключи: ' + str(list(all_flights_data.keys())) + ')' if isinstance(all_flights_data, dict) and all_flights_data else 'Пустой результат или не словарь'}")
+        if not isinstance(all_flights_data, dict): # Дополнительная проверка типа
+             logger.warning(f"find_flights_with_fallback вернул не словарь: {type(all_flights_data)}")
+             all_flights_data = {} # Приводим к ожидаемому типу для дальнейшей обработки
+
 
         final_flights_to_show: Dict[str, List[Any]]
         if price_preference == config.CALLBACK_PRICE_LOWEST:
             final_flights_to_show = helpers.filter_cheapest_flights(all_flights_data)
+            logger.info(f"После filter_cheapest_flights для 'lowest': {'Данные есть' if final_flights_to_show else 'Пусто'}")
         else: 
             final_flights_to_show = all_flights_data
+            logger.info(f"Для '{price_preference}': используются все полученные рейсы ({'Данные есть' if final_flights_to_show else 'Пусто'})")
         
         return await process_and_send_flights(update, context, final_flights_to_show)
 
     except Exception as e:
         logger.error(f"Ошибка в launch_flight_search: {e}", exc_info=True)
         error_msg = config.MSG_ERROR_OCCURRED + " Пожалуйста, попробуйте /start"
-        target_chat_id = update.effective_chat.id # Используем, чтобы быть уверенными в chat_id
+        target_chat_id = update.effective_chat.id
         if update.callback_query:
             await update.callback_query.answer() 
             try: 
@@ -102,10 +121,10 @@ async def launch_flight_search(update: Update, context: ContextTypes.DEFAULT_TYP
                  await context.bot.send_message(target_chat_id, error_msg)
         elif update.message:
              await update.message.reply_text(error_msg)
-        else: # крайний случай, если update не содержит информации для ответа
-             if target_chat_id: # Проверяем, что target_chat_id был установлен
+        else:
+             if target_chat_id:
                 await context.bot.send_message(target_chat_id, error_msg)
-             else: # Если и chat_id не удалось получить, логируем дополнительно
+             else:
                 logger.error("Не удалось определить chat_id для отправки сообщения об ошибке в launch_flight_search.")
         return ConversationHandler.END
 
