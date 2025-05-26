@@ -612,7 +612,7 @@ async def standard_arrival_city(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data['arrival_airport_iata'] = iata_code
     context.user_data['arrival_city_name'] = city
     logger.info("standard_arrival_city: Выбран город прилёта '%s (%s)' в стране '%s' для пользователя %s.", city, iata_code, country, update.effective_user.id if update.effective_user else "unknown user")
-    await update.message.reply_text(f"Город прилёта: {escape_markdown(city, version=2)}.", reply_markup=ReplyKeyboardRemove(), parse_mode='MarkdownV2')
+    await update.message.reply_text(f"Город прилёта: {city}.", reply_markup=ReplyKeyboardRemove())
 
     context.user_data['current_search_flow'] = config.FLOW_STANDARD
     if context.user_data.get('flight_type_one_way'):
@@ -905,7 +905,8 @@ async def flex_arrival_city(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     context.user_data['arrival_city_name'] = city
     logger.info("flex_arrival_city: Выбран город прилёта '%s (%s)' в стране '%s' для пользователя %s.", city, iata_code, country, update.effective_user.id if update.effective_user else "unknown user")
     
-    await update.message.reply_text(f"Город прилёта (гибкий поиск): {escape_markdown(city, version=2)}.", reply_markup=ReplyKeyboardRemove(), parse_mode='MarkdownV2')
+    await update.message.reply_text(f"Город прилёта (гибкий поиск): {city}.", reply_markup=ReplyKeyboardRemove())
+
 
     # После выбора города прилета в гибком поиске, переходим к запросу дат
     await context.bot.send_message(
