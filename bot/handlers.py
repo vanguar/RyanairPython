@@ -1354,15 +1354,25 @@ async def standard_return_date_selected(update: Update, context: ContextTypes.DE
 async def flex_flight_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_input = update.message.text
     if user_input not in ['1', '2']:
-        await update.message.reply_text("Пожалуйста, выберите 1 или 2.", reply_markup=keyboards.get_flight_type_reply_keyboard())
-        return config.SELECTING_FLEX_FLIGHT_TYPE
+        await update.message.reply_text("Пожалуйста, выберите 1 или 2.", reply_markup=keyboards.get_flight_type_reply_keyboard()) #
+        return config.SELECTING_FLEX_FLIGHT_TYPE #
     context.user_data['flight_type_one_way'] = (user_input == '1')
-    context.user_data['current_search_flow'] = config.FLOW_FLEX
+    context.user_data['current_search_flow'] = config.FLOW_FLEX #
+
+    # Сообщаем о выборе и убираем ReplyKeyboard
+    flight_type_description = "В одну сторону" if context.user_data['flight_type_one_way'] else "В обе стороны"
     await update.message.reply_text(
-        config.MSG_PRICE_OPTION_PROMPT,
-        reply_markup=keyboards.get_price_options_keyboard(back_callback_data=config.CB_BACK_PRICE_TO_FLEX_FLIGHT_TYPE)
+        f"Тип рейса: {flight_type_description}.",
+        reply_markup=ReplyKeyboardRemove()  # <--- Вот эта строка убирает клавиатуру "1, 2"
     )
-    return config.SELECTING_PRICE_OPTION
+
+    # Теперь отправляем следующее сообщение с InlineKeyboardMarkup
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id, # Используем context.bot.send_message для чистоты
+        text=config.MSG_PRICE_OPTION_PROMPT, #
+        reply_markup=keyboards.get_price_options_keyboard(back_callback_data=config.CB_BACK_PRICE_TO_FLEX_FLIGHT_TYPE) #
+    )
+    return config.SELECTING_PRICE_OPTION #
 
 async def flex_ask_departure_airport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
