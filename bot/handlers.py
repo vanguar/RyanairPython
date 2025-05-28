@@ -1,6 +1,6 @@
 # bot/handlers.py
 import logging
-from telegram import Update, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery # Добавлен CallbackQuery
 from telegram.ext import (
     CommandHandler,
     MessageHandler,
@@ -56,47 +56,116 @@ from .config import (
 logger = logging.getLogger(__name__)
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ОТОБРАЖЕНИЯ КЛАВИАТУР (ОБНОВЛЕННЫЕ) ---
-async def ask_year(message_or_update: Union[Update, Any], context: ContextTypes.DEFAULT_TYPE,
-                   message_text: str, callback_prefix: str = "",
+# В файле /app/bot/handlers.py
+
+async def ask_year(message_or_update_or_query: Union[Update, CallbackQuery, Any], # Тип параметра обновлен
+                   context: ContextTypes.DEFAULT_TYPE,
+                   message_text: str,
+                   callback_prefix: str = "",
                    keyboard_back_callback: str | None = None):
-    target_message_object = None
-    if hasattr(message_or_update, 'callback_query') and message_or_update.callback_query:
-        await message_or_update.callback_query.edit_message_text(
-            text=message_text,
-            reply_markup=keyboards.generate_year_buttons(callback_prefix, back_callback_data=keyboard_back_callback)
-        )
-        return
-    elif hasattr(message_or_update, 'message') and message_or_update.message:
-        target_message_object = message_or_update.message
-    elif hasattr(message_or_update, 'reply_text'): # Fallback for direct message object
-        target_message_object = message_or_update
+    """
+    Отправляет или редактирует сообщение с клавиатурой выбора года.
+    Может принимать как объект Update, так и напрямую CallbackQuery.
+    """
+    query_to_edit: CallbackQuery | None = None
+    chat_id_to_send_new: int | None = None
+    message_to_reply_to = None # Для случая MessageHandler
 
-    if target_message_object and hasattr(target_message_object, 'reply_text'):
-        await target_message_object.reply_text(
-            message_text,
-            reply_markup=keyboards.generate_year_buttons(callback_prefix, back_callback_data=keyboard_back_callback)
-        )
-    elif hasattr(message_or_update, 'effective_chat') and message_or_update.effective_chat:
-         await context.bot.send_message(
-            chat_id=message_or_update.effective_chat.id,
-            text=message_text,
-            reply_markup=keyboards.generate_year_buttons(callback_prefix, back_callback_data=keyboard_back_callback)
-        )
+    if isinstance(message_or_update_or_query, Update):
+        update_obj = message_or_update_or_query
+        if update_obj.callback_query:
+            query_to_edit = update_obj.callback_query
+        elif update_obj.message: # Вызов из MessageHandler (например, standard_departure_city)
+            chat_id_to_send_new = update_obj.message.chat_id
+            message_to_reply_to = update_obj.message # Сохраняем для reply_text
+        elif update_obj.effective_chat: # Общий случай для Update
+            chat_id_to_send_new = update_obj.effective_chat.id
+
+    # Проверяем, не передали ли нам напрямую CallbackQuery (например, из "back" хендлера)
+    # или если мы не смогли извлечь его из Update, но это мог быть CallbackQuery
+    elif isinstance(message_or_update_or_query, CallbackQuery): # Явная проверка типа
+        query_to_edit = message_or_update_or_query
+    elif hasattr(message_or_update_or_query, 'id') and hasattr(message_or_update_or_query, 'data') and hasattr(message_or_update_or_query, 'message'):
+        # Альтернативная проверка (duck typing), если CallbackQuery не импортирован
+        # и message_or_update_or_query не является Update
+        try:
+            query_to_edit = message_or_update_or_query
+        except Exception: # На случай, если это не CallbackQuery
+            logger.warning("ask_year: переданный объект не является ни Update, ни ожидаемым CallbackQuery.")
+
+
+    reply_markup = keyboards.generate_year_buttons(callback_prefix, back_callback_data=keyboard_back_callback)
+
+    if query_to_edit and query_to_edit.message: # Если есть что редактировать
+        try:
+            await query_to_edit.edit_message_text(
+                text=message_text,
+                reply_markup=reply_markup
+            )
+            return
+        except Exception as e:
+            logger.error(f"ask_year: Ошибка при редактировании сообщения: {e}. Попытка отправить новое.")
+            # Если редактирование не удалось, пытаемся отправить новое сообщение, если есть chat_id
+            if query_to_edit.message.chat_id:
+                 chat_id_to_send_new = query_to_edit.message.chat_id
+            # Если chat_id не удалось получить, то выходим или логируем
+
+
+    # Если нужно отправить новое сообщение (например, первый вызов из MessageHandler)
+    if chat_id_to_send_new:
+        if message_to_reply_to and hasattr(message_to_reply_to, 'reply_text'): # Если это был MessageUpdate
+            await message_to_reply_to.reply_text(
+                message_text,
+                reply_markup=reply_markup
+            )
+        else: # Общий случай отправки нового сообщения
+            await context.bot.send_message(
+                chat_id=chat_id_to_send_new,
+                text=message_text,
+                reply_markup=reply_markup
+            )
+    elif query_to_edit and query_to_edit.message and query_to_edit.message.chat_id: # Если не удалось отредактировать, но есть chat_id из query
+        await context.bot.send_message(
+                chat_id=query_to_edit.message.chat_id,
+                text=message_text,
+                reply_markup=reply_markup
+            )
     else:
-        logger.warning("ask_year: не удалось определить объект для ответа.")
+        logger.warning("ask_year: не удалось определить чат для отправки или редактирования сообщения.")
 
-async def ask_month(update: Update, context: ContextTypes.DEFAULT_TYPE,
+# В файле /app/bot/handlers.py
+async def ask_month(message_or_update_or_query: Union[Update, Any], context: ContextTypes.DEFAULT_TYPE, # Изменено имя параметра
                     year_for_months: int, message_text: str, callback_prefix: str = "",
                     departure_year_for_comparison: Union[int, None] = None,
                     departure_month_for_comparison: Union[int, None] = None,
                     keyboard_back_callback: str | None = None):
+
+    # Определяем, что нам передали: Update или уже CallbackQuery
+    actual_query_object: CallbackQuery | None = None
+    effective_chat_id: int | None = None
+
+    if isinstance(message_or_update_or_query, Update):
+        update_obj = message_or_update_or_query
+        if update_obj.callback_query:
+            actual_query_object = update_obj.callback_query
+        if update_obj.effective_chat:
+            effective_chat_id = update_obj.effective_chat.id
+    elif hasattr(message_or_update_or_query, 'id') and hasattr(message_or_update_or_query, 'data'):
+        # Похоже на CallbackQuery, если это не Update
+        # Это упрощенная проверка, в идеале использовать isinstance(message_or_update_or_query, CallbackQuery)
+        # но для этого нужно импортировать CallbackQuery из telegram
+        actual_query_object = message_or_update_or_query
+        if actual_query_object.message: # Получаем chat_id из сообщения CallbackQuery
+            effective_chat_id = actual_query_object.message.chat_id
+
     logger.info(f"ask_month: Год: {year_for_months}, Префикс: {callback_prefix}, BackCallback: {keyboard_back_callback}")
-    if not update.callback_query:
-        logger.error("ask_month был вызван без callback_query.")
-        # Попытка отправить новое сообщение, если callback_query отсутствует, но есть update.effective_chat
-        if hasattr(update, 'effective_chat') and update.effective_chat:
+
+    if not actual_query_object:
+        logger.error("ask_month: не удалось получить объект CallbackQuery.")
+        # Попытка отправить новое сообщение, если CallbackQuery отсутствует, но есть chat_id
+        if effective_chat_id:
              await context.bot.send_message(
-                chat_id=update.effective_chat.id,
+                chat_id=effective_chat_id,
                 text=message_text,
                 reply_markup=keyboards.generate_month_buttons(
                     callback_prefix=callback_prefix,
@@ -108,8 +177,9 @@ async def ask_month(update: Update, context: ContextTypes.DEFAULT_TYPE,
             )
         return
 
+    # Теперь используем actual_query_object для редактирования сообщения
     try:
-        await update.callback_query.edit_message_text(
+        await actual_query_object.edit_message_text( # ИСПОЛЬЗУЕМ actual_query_object
             text=message_text,
             reply_markup=keyboards.generate_month_buttons(
                 callback_prefix=callback_prefix,
@@ -121,38 +191,112 @@ async def ask_month(update: Update, context: ContextTypes.DEFAULT_TYPE,
         )
     except TypeError as e:
         logger.error(f"ask_month: TypeError при вызове generate_month_buttons: {e}")
-        await update.callback_query.edit_message_text("Произошла ошибка при отображении месяцев. Попробуйте /start")
+        await actual_query_object.edit_message_text("Произошла ошибка при отображении месяцев. Попробуйте /start")
     except Exception as e:
         logger.error(f"ask_month: Непредвиденная ошибка: {e}", exc_info=True)
-        await update.callback_query.edit_message_text("Произошла внутренняя ошибка. Попробуйте /start")
+        await actual_query_object.edit_message_text("Произошла внутренняя ошибка. Попробуйте /start")
 
-async def ask_date_range(update: Update, context: ContextTypes.DEFAULT_TYPE,
-                         year: int, month: int, message_text: str, callback_prefix: str = "",
+# В файле /app/bot/handlers.py
+
+async def ask_date_range(source_update_or_query: Union[Update, CallbackQuery, Any], # Тип параметра обновлен
+                         context: ContextTypes.DEFAULT_TYPE,
+                         year: int, month: int,
+                         message_text: str, callback_prefix: str = "",
                          keyboard_back_callback: str | None = None):
-    if not update.callback_query: # Аналогично ask_month
-        logger.error("ask_date_range был вызван без callback_query.")
-        if hasattr(update, 'effective_chat') and update.effective_chat:
+    """
+    Редактирует сообщение, предлагая выбрать диапазон дат.
+    Ожидает, что source_update_or_query содержит CallbackQuery.
+    """
+    query_to_edit: CallbackQuery | None = None
+    effective_chat_id: int | None = None # Для возможной отправки нового сообщения при ошибке
+
+    if isinstance(source_update_or_query, Update):
+        update_obj = source_update_or_query
+        if update_obj.callback_query:
+            query_to_edit = update_obj.callback_query
+        if update_obj.effective_chat: # На случай, если query_to_edit не будет, но нужно будет ответить
+            effective_chat_id = update_obj.effective_chat.id
+    elif isinstance(source_update_or_query, CallbackQuery): # Явная проверка типа
+        query_to_edit = source_update_or_query
+        if query_to_edit.message:
+             effective_chat_id = query_to_edit.message.chat_id # Для единообразия и возможного fallback
+    elif hasattr(source_update_or_query, 'id') and hasattr(source_update_or_query, 'data') and hasattr(source_update_or_query, 'message'):
+        try:
+            query_to_edit = source_update_or_query
+            if query_to_edit.message:
+                effective_chat_id = query_to_edit.message.chat_id
+        except Exception:
+            logger.warning("ask_date_range: переданный объект не является ни Update, ни ожидаемым CallbackQuery.")
+
+    if not query_to_edit or not query_to_edit.message:
+        logger.error("ask_date_range: не удалось получить объект CallbackQuery или связанное сообщение для редактирования.")
+        # Попытка отправить новое сообщение, если известен чат
+        if effective_chat_id:
             await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=message_text,
+                chat_id=effective_chat_id,
+                text=message_text, # Отправляем исходный текст запроса
                 reply_markup=keyboards.generate_date_range_buttons(year, month, callback_prefix, back_callback_data=keyboard_back_callback)
             )
+            logger.info("ask_date_range: Отправлено новое сообщение вместо редактирования.")
         return
-    await update.callback_query.edit_message_text(
-        text=message_text,
-        reply_markup=keyboards.generate_date_range_buttons(year, month, callback_prefix, back_callback_data=keyboard_back_callback)
-    )
 
-async def ask_specific_date(update: Update, context: ContextTypes.DEFAULT_TYPE,
+    try:
+        await query_to_edit.edit_message_text(
+            text=message_text,
+            reply_markup=keyboards.generate_date_range_buttons(year, month, callback_prefix, back_callback_data=keyboard_back_callback)
+        )
+    except Exception as e:
+        logger.error(f"ask_date_range: Ошибка при редактировании сообщения: {e}")
+        # Можно попытаться отправить новое сообщение, если редактирование не удалось
+        if query_to_edit.message and query_to_edit.message.chat_id: # Проверяем еще раз
+            try:
+                await context.bot.send_message(
+                    chat_id=query_to_edit.message.chat_id,
+                    text=message_text,
+                    reply_markup=keyboards.generate_date_range_buttons(year, month, callback_prefix, back_callback_data=keyboard_back_callback)
+                )
+            except Exception as e_send:
+                 logger.error(f"ask_date_range: Ошибка и при отправке нового сообщения: {e_send}")
+
+# В файле /app/bot/handlers.py
+
+async def ask_specific_date(source_update_or_query: Union[Update, CallbackQuery, Any], # Тип параметра обновлен
+                            context: ContextTypes.DEFAULT_TYPE,
                             year: int, month: int, range_start: int, range_end: int,
                             message_text: str, callback_prefix: str = "",
                             min_allowed_date_for_comparison: Union[datetime, None] = None,
                             keyboard_back_callback: str | None = None):
-    if not update.callback_query: # Аналогично ask_month
-        logger.error("ask_specific_date был вызван без callback_query.")
-        if hasattr(update, 'effective_chat') and update.effective_chat:
+    """
+    Редактирует сообщение, предлагая выбрать конкретную дату.
+    Ожидает, что source_update_or_query содержит CallbackQuery.
+    """
+    query_to_edit: CallbackQuery | None = None
+    effective_chat_id: int | None = None # Для возможной отправки нового сообщения при ошибке
+
+    if isinstance(source_update_or_query, Update):
+        update_obj = source_update_or_query
+        if update_obj.callback_query:
+            query_to_edit = update_obj.callback_query
+        if update_obj.effective_chat:
+            effective_chat_id = update_obj.effective_chat.id
+    elif isinstance(source_update_or_query, CallbackQuery): # Явная проверка типа
+        query_to_edit = source_update_or_query
+        if query_to_edit.message:
+             effective_chat_id = query_to_edit.message.chat_id
+    elif hasattr(source_update_or_query, 'id') and hasattr(source_update_or_query, 'data') and hasattr(source_update_or_query, 'message'):
+        try:
+            query_to_edit = source_update_or_query
+            if query_to_edit.message:
+                effective_chat_id = query_to_edit.message.chat_id
+        except Exception:
+            logger.warning("ask_specific_date: переданный объект не является ни Update, ни ожидаемым CallbackQuery.")
+
+
+    if not query_to_edit or not query_to_edit.message:
+        logger.error("ask_specific_date: не удалось получить объект CallbackQuery или связанное сообщение для редактирования.")
+        if effective_chat_id:
             await context.bot.send_message(
-                chat_id=update.effective_chat.id,
+                chat_id=effective_chat_id,
                 text=message_text,
                 reply_markup=keyboards.generate_specific_date_buttons(
                     year, month, range_start, range_end,
@@ -161,16 +305,35 @@ async def ask_specific_date(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     back_callback_data=keyboard_back_callback
                 )
             )
+            logger.info("ask_specific_date: Отправлено новое сообщение вместо редактирования.")
         return
-    await update.callback_query.edit_message_text(
-        text=message_text,
-        reply_markup=keyboards.generate_specific_date_buttons(
-            year, month, range_start, range_end,
-            callback_prefix=callback_prefix,
-            min_allowed_date=min_allowed_date_for_comparison,
-            back_callback_data=keyboard_back_callback
+
+    try:
+        await query_to_edit.edit_message_text(
+            text=message_text,
+            reply_markup=keyboards.generate_specific_date_buttons(
+                year, month, range_start, range_end,
+                callback_prefix=callback_prefix,
+                min_allowed_date=min_allowed_date_for_comparison,
+                back_callback_data=keyboard_back_callback
+            )
         )
-    )
+    except Exception as e:
+        logger.error(f"ask_specific_date: Ошибка при редактировании сообщения: {e}")
+        if query_to_edit.message and query_to_edit.message.chat_id:
+            try:
+                await context.bot.send_message(
+                    chat_id=query_to_edit.message.chat_id,
+                    text=message_text,
+                    reply_markup=keyboards.generate_specific_date_buttons(
+                        year, month, range_start, range_end,
+                        callback_prefix=callback_prefix,
+                        min_allowed_date=min_allowed_date_for_comparison,
+                        back_callback_data=keyboard_back_callback
+                    )
+                )
+            except Exception as e_send:
+                logger.error(f"ask_specific_date: Ошибка и при отправке нового сообщения: {e_send}")
 
 # --- ОСНОВНЫЕ ОБРАБОТЧИКИ ---
 async def launch_flight_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
