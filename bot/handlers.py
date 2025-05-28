@@ -1975,6 +1975,7 @@ def create_conversation_handler() -> ConversationHandler:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, enter_custom_price_handler),
                 # Если бы отсюда была инлайн кнопка "Назад", она бы здесь регистрировалась.
                 # Сейчас возврат при ошибке происходит через get_price_options_keyboard
+                CallbackQueryHandler(back_price_to_entering_custom_handler, pattern=f"^{config.CB_BACK_PRICE_TO_ENTERING_CUSTOM}$")
             ],
 
             config.ASK_SEARCH_OTHER_AIRPORTS: [
