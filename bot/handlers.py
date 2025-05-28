@@ -1878,117 +1878,179 @@ def create_conversation_handler() -> ConversationHandler:
 
     conv_handler = ConversationHandler(
         entry_points=[
-            CommandHandler('start', start_command),
-            CallbackQueryHandler(start_search_callback, pattern='^(start_standard_search|start_flex_search)$'),
-            CallbackQueryHandler(start_flex_anywhere_callback, pattern='^start_flex_anywhere$')
+            CommandHandler('start', handlers.start_command),
+            CallbackQueryHandler(handlers.start_search_callback, pattern='^(start_standard_search|start_flex_search)$'),
+            CallbackQueryHandler(handlers.start_flex_anywhere_callback, pattern='^start_flex_anywhere$')
         ],
         states={
             # --- Стандартный поиск ---
-            config.S_SELECTING_FLIGHT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_flight_type)],
-            config.S_SELECTING_DEPARTURE_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_departure_country)],
-            config.S_SELECTING_DEPARTURE_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_departure_city)],
+            config.S_SELECTING_FLIGHT_TYPE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.standard_flight_type)
+            ],
+            config.S_SELECTING_DEPARTURE_COUNTRY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.standard_departure_country)
+            ],
+            config.S_SELECTING_DEPARTURE_CITY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.standard_departure_city)
+            ],
             config.S_SELECTING_DEPARTURE_YEAR: [
-                CallbackQueryHandler(standard_departure_year_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_year_"),
-                CallbackQueryHandler(back_std_dep_year_to_city_handler, pattern=f"^{config.CB_BACK_STD_DEP_YEAR_TO_CITY}$")
+                CallbackQueryHandler(handlers.standard_departure_year_selected,
+                                     pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_year_"),
+                CallbackQueryHandler(handlers.back_std_dep_year_to_city_handler,
+                                     pattern=f"^{config.CB_BACK_STD_DEP_YEAR_TO_CITY}$")
             ],
             config.S_SELECTING_DEPARTURE_MONTH: [
-                CallbackQueryHandler(standard_departure_month_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_month_"),
-                CallbackQueryHandler(back_std_dep_month_to_year_handler, pattern=f"^{config.CB_BACK_STD_DEP_MONTH_TO_YEAR}$")
+                CallbackQueryHandler(handlers.standard_departure_month_selected,
+                                     pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_month_"),
+                CallbackQueryHandler(handlers.back_std_dep_month_to_year_handler,
+                                     pattern=f"^{config.CB_BACK_STD_DEP_MONTH_TO_YEAR}$")
             ],
             config.S_SELECTING_DEPARTURE_DATE_RANGE: [
-                CallbackQueryHandler(standard_departure_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_range_"),
-                CallbackQueryHandler(back_std_dep_range_to_month_handler, pattern=f"^{config.CB_BACK_STD_DEP_RANGE_TO_MONTH}$")
+                CallbackQueryHandler(handlers.standard_departure_date_range_selected,
+                                     pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_range_"),
+                CallbackQueryHandler(handlers.back_std_dep_range_to_month_handler,
+                                     pattern=f"^{config.CB_BACK_STD_DEP_RANGE_TO_MONTH}$")
             ],
             config.S_SELECTING_DEPARTURE_DATE: [
-                CallbackQueryHandler(standard_departure_date_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_date_"),
-                CallbackQueryHandler(back_std_dep_date_to_range_handler, pattern=f"^{config.CB_BACK_STD_DEP_DATE_TO_RANGE}$")
+                CallbackQueryHandler(handlers.standard_departure_date_selected,
+                                     pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_date_"),
+                CallbackQueryHandler(handlers.back_std_dep_date_to_range_handler,
+                                     pattern=f"^{config.CB_BACK_STD_DEP_DATE_TO_RANGE}$")
             ],
-            config.S_SELECTING_ARRIVAL_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_arrival_country)], # Добавить "Назад" если нужно
-            config.S_SELECTING_ARRIVAL_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_arrival_city)], # Добавить "Назад" если нужно
-
+            config.S_SELECTING_ARRIVAL_COUNTRY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.standard_arrival_country)
+            ],
+            config.S_SELECTING_ARRIVAL_CITY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.standard_arrival_city)
+            ],
             config.S_SELECTING_RETURN_YEAR: [
-                CallbackQueryHandler(standard_return_year_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_year_"),
-                CallbackQueryHandler(back_std_ret_year_to_arr_city_handler, pattern=f"^{config.CB_BACK_STD_RET_YEAR_TO_ARR_CITY}$")
+                CallbackQueryHandler(handlers.standard_return_year_selected,
+                                     pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_year_"),
+                CallbackQueryHandler(handlers.back_std_ret_year_to_arr_city_handler,
+                                     pattern=f"^{config.CB_BACK_STD_RET_YEAR_TO_ARR_CITY}$")
             ],
             config.S_SELECTING_RETURN_MONTH: [
-                CallbackQueryHandler(standard_return_month_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_month_"),
-                CallbackQueryHandler(back_std_ret_month_to_year_handler, pattern=f"^{config.CB_BACK_STD_RET_MONTH_TO_YEAR}$")
+                CallbackQueryHandler(handlers.standard_return_month_selected,
+                                     pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_month_"),
+                CallbackQueryHandler(handlers.back_std_ret_month_to_year_handler,
+                                     pattern=f"^{config.CB_BACK_STD_RET_MONTH_TO_YEAR}$")
             ],
             config.S_SELECTING_RETURN_DATE_RANGE: [
-                CallbackQueryHandler(standard_return_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_range_"),
-                CallbackQueryHandler(back_std_ret_range_to_month_handler, pattern=f"^{config.CB_BACK_STD_RET_RANGE_TO_MONTH}$")
+                CallbackQueryHandler(handlers.standard_return_date_range_selected,
+                                     pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_range_"),
+                CallbackQueryHandler(handlers.back_std_ret_range_to_month_handler,
+                                     pattern=f"^{config.CB_BACK_STD_RET_RANGE_TO_MONTH}$")
             ],
             config.S_SELECTING_RETURN_DATE: [
-                CallbackQueryHandler(standard_return_date_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_date_"),
-                CallbackQueryHandler(back_std_ret_date_to_range_handler, pattern=f"^{config.CB_BACK_STD_RET_DATE_TO_RANGE}$")
+                CallbackQueryHandler(handlers.standard_return_date_selected,
+                                     pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_date_"),
+                CallbackQueryHandler(handlers.back_std_ret_date_to_range_handler,
+                                     pattern=f"^{config.CB_BACK_STD_RET_DATE_TO_RANGE}$")
             ],
 
             # --- Гибкий поиск ---
-            config.SELECTING_FLEX_FLIGHT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, flex_flight_type)],
+            config.SELECTING_FLEX_FLIGHT_TYPE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.flex_flight_type)
+            ],
             config.ASK_FLEX_DEPARTURE_AIRPORT: [
-                CallbackQueryHandler(flex_ask_departure_airport, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ask_dep_"),
-                CallbackQueryHandler(back_flex_ask_dep_to_price_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_DEP_TO_PRICE}$")
+                CallbackQueryHandler(handlers.flex_ask_departure_airport,
+                                     pattern=f"^{config.CALLBACK_PREFIX_FLEX}ask_dep_"),
+                CallbackQueryHandler(handlers.back_flex_ask_dep_to_price_handler,
+                                     pattern=f"^{config.CB_BACK_FLEX_ASK_DEP_TO_PRICE}$")
             ],
             config.SELECTING_FLEX_DEPARTURE_COUNTRY: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, flex_departure_country),
-                # CallbackQueryHandler(back_flex_dep_country_to_ask_dep_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_COUNTRY_TO_ASK_DEP}$") # Если бы была инлайн кнопка "назад"
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.flex_departure_country)
             ],
             config.SELECTING_FLEX_DEPARTURE_CITY: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, flex_departure_city),
-                # CallbackQueryHandler(back_flex_dep_city_to_dep_country_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_CITY_TO_DEP_COUNTRY}$")
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.flex_departure_city)
             ],
             config.ASK_FLEX_ARRIVAL_AIRPORT: [
-                CallbackQueryHandler(flex_ask_arrival_airport, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ask_arr_"),
-                CallbackQueryHandler(back_flex_ask_arr_to_dep_city_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_ARR_TO_DEP_CITY}$")
+                CallbackQueryHandler(handlers.flex_ask_arrival_airport,
+                                     pattern=f"^{config.CALLBACK_PREFIX_FLEX}ask_arr_"),
+                CallbackQueryHandler(handlers.back_flex_ask_arr_to_dep_city_handler,
+                                     pattern=f"^{config.CB_BACK_FLEX_ASK_ARR_TO_DEP_CITY}$")
             ],
             config.SELECTING_FLEX_ARRIVAL_COUNTRY: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, flex_arrival_country),
-                # CallbackQueryHandler(back_flex_arr_country_to_ask_arr_handler, pattern=f"^{config.CB_BACK_FLEX_ARR_COUNTRY_TO_ASK_ARR}$")
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.flex_arrival_country)
             ],
             config.SELECTING_FLEX_ARRIVAL_CITY: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, flex_arrival_city),
-                # CallbackQueryHandler(back_flex_arr_city_to_arr_country_handler, pattern=f"^{config.CB_BACK_FLEX_ARR_CITY_TO_ARR_COUNTRY}$")
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.flex_arrival_city)
             ],
             config.ASK_FLEX_DATES: [
-                CallbackQueryHandler(flex_ask_dates, pattern=f"^(?:{config.CALLBACK_PREFIX_FLEX}ask_dates_yes|{config.CALLBACK_NO_SPECIFIC_DATES})$"),
-                CallbackQueryHandler(back_flex_ask_dates_to_location_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_DATES_TO_ARR_CITY}$"), # Этот или следующий, в зависимости от того, был ли город прилета
-                CallbackQueryHandler(back_flex_ask_dates_to_location_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR}$")
+                CallbackQueryHandler(handlers.flex_ask_dates,
+                                     pattern=f"^(?:{config.CALLBACK_PREFIX_FLEX}ask_dates_yes|{config.CALLBACK_NO_SPECIFIC_DATES})$"),
+                CallbackQueryHandler(handlers.back_flex_ask_dates_to_location_handler,
+                                     pattern=f"^{config.CB_BACK_FLEX_ASK_DATES_TO_ARR_CITY}$"),
+                CallbackQueryHandler(handlers.back_flex_ask_dates_to_location_handler,
+                                     pattern=f"^{config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR}$")
             ],
-            # Для SELECTING_FLEX_..._YEAR/MONTH/DATE_RANGE/DATE нужно будет добавить аналогичные "назад" обработчики,
-            # как в стандартном поиске, но с FLEX префиксами и FLEX CB_BACK_... константами
             config.SELECTING_FLEX_DEPARTURE_YEAR: [
-                CallbackQueryHandler(flex_departure_year_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_year_"),
-                # CallbackQueryHandler(back_flex_dep_year_to_ask_dates_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES}$")
+                CallbackQueryHandler(handlers.flex_departure_year_selected,
+                                     pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_year_")
             ],
-            # И так далее для SELECTING_FLEX_DEPARTURE_MONTH, SELECTING_FLEX_DEPARTURE_DATE_RANGE, SELECTING_FLEX_DEPARTURE_DATE
-            # И для дат возврата в гибком поиске: SELECTING_FLEX_RETURN_YEAR, ...
+            config.SELECTING_FLEX_DEPARTURE_MONTH: [  # ← Добавлено
+                CallbackQueryHandler(handlers.flex_departure_month_selected,
+                                     pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_month_")
+            ],
+            config.SELECTING_FLEX_DEPARTURE_DATE_RANGE: [
+                CallbackQueryHandler(handlers.flex_departure_date_range_selected,
+                                     pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_range_")
+            ],
+            config.SELECTING_FLEX_DEPARTURE_DATE: [
+                CallbackQueryHandler(handlers.flex_departure_date_selected,
+                                     pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_date_")
+            ],
+            config.SELECTING_FLEX_RETURN_YEAR: [
+                CallbackQueryHandler(handlers.flex_return_year_selected,
+                                     pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_year_")
+            ],
+            config.SELECTING_FLEX_RETURN_MONTH: [
+                CallbackQueryHandler(handlers.flex_return_month_selected,
+                                     pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_month_")
+            ],
+            config.SELECTING_FLEX_RETURN_DATE_RANGE: [
+                CallbackQueryHandler(handlers.flex_return_date_range_selected,
+                                     pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_range_")
+            ],
+            config.SELECTING_FLEX_RETURN_DATE: [
+                CallbackQueryHandler(handlers.flex_return_date_selected,
+                                     pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_date_")
+            ],
 
             # --- ОБЩИЕ СОСТОЯНИЯ ДЛЯ ЦЕНЫ ---
             config.SELECTING_PRICE_OPTION: [
-                CallbackQueryHandler(handle_price_option_selected, pattern=price_option_pattern),
-                CallbackQueryHandler(back_price_to_std_arr_city_oneway_handler, pattern=f"^{config.CB_BACK_PRICE_TO_STD_ARR_CITY_ONEWAY}$"),
-                CallbackQueryHandler(back_price_to_std_ret_date_twoway_handler, pattern=f"^{config.CB_BACK_PRICE_TO_STD_RET_DATE_TWOWAY}$"),
-                CallbackQueryHandler(back_price_to_flex_flight_type_handler, pattern=f"^{config.CB_BACK_PRICE_TO_FLEX_FLIGHT_TYPE}$"),
-                CallbackQueryHandler(back_price_to_entering_custom_handler, pattern=f"^{config.CB_BACK_PRICE_TO_ENTERING_CUSTOM}$") # Назад от ввода цены к выбору опции
+                CallbackQueryHandler(handlers.handle_price_option_selected,
+                                     pattern=price_option_pattern),
+                CallbackQueryHandler(handlers.back_price_to_std_arr_city_oneway_handler,
+                                     pattern=f"^{config.CB_BACK_PRICE_TO_STD_ARR_CITY_ONEWAY}$"),
+                CallbackQueryHandler(handlers.back_price_to_std_ret_date_twoway_handler,
+                                     pattern=f"^{config.CB_BACK_PRICE_TO_STD_RET_DATE_TWOWAY}$"),
+                CallbackQueryHandler(handlers.back_price_to_flex_flight_type_handler,
+                                     pattern=f"^{config.CB_BACK_PRICE_TO_FLEX_FLIGHT_TYPE}$"),
+                CallbackQueryHandler(handlers.back_price_to_entering_custom_handler,
+                                     pattern=f"^{config.CB_BACK_PRICE_TO_ENTERING_CUSTOM}$")
             ],
             config.ENTERING_CUSTOM_PRICE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, enter_custom_price_handler),
-                # Если бы отсюда была инлайн кнопка "Назад", она бы здесь регистрировалась.
-                # Сейчас возврат при ошибке происходит через get_price_options_keyboard
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.enter_custom_price_handler)
             ],
-
             config.ASK_SEARCH_OTHER_AIRPORTS: [
-                CallbackQueryHandler(handle_search_other_airports_decision, pattern=f"^{config.CALLBACK_YES_OTHER_AIRPORTS}$|^{config.CALLBACK_NO_OTHER_AIRPORTS}$")
+                CallbackQueryHandler(handlers.handle_search_other_airports_decision,
+                                     pattern=f"^{config.CALLBACK_YES_OTHER_AIRPORTS}$|^{config.CALLBACK_NO_OTHER_AIRPORTS}$")
             ],
         },
         fallbacks=[
-            CommandHandler('cancel', cancel_handler),
-            CallbackQueryHandler(handle_invalid_price_choice_fallback, pattern=price_fallback_pattern),
-            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_valid_months_error$"),
-            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_valid_dates_error$"),
-            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_specific_dates_in_range_error$"),
-            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_valid_date_ranges_error$"),
-            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_dates$"),
+            CommandHandler('cancel', handlers.cancel_handler),
+            CallbackQueryHandler(handlers.handle_invalid_price_choice_fallback, pattern=price_fallback_pattern),
+            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True),
+                                 pattern="^no_valid_months_error$"),
+            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True),
+                                 pattern="^no_valid_dates_error$"),
+            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True),
+                                 pattern="^no_specific_dates_in_range_error$"),
+            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True),
+                                 pattern="^no_valid_date_ranges_error$"),
+            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True),
+                                 pattern="^no_dates$")
         ],
         map_to_parent={},
         per_message=False,
