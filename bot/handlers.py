@@ -491,7 +491,7 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
             for i in range(0, len(full_text), max_telegram_message_length):
                 chunk = full_text[i:i + max_telegram_message_length]
                 try:
-                    await context.bot.send_message(chat_id=chat_id, text=chunk, parse_mode='MarkdownV2') #
+                    await context.bot.send_message(chat_id=chat_id, text=chunk)
                 except Exception as e_md:
                     logger.warning(f"Ошибка при отправке чанка рейсов с MarkdownV2: {e_md}. Попытка отправить как простой текст.") #
                     try:
