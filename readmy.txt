@@ -28,3 +28,42 @@ git push -u origin main
 
 python bot\update_airports.py   -   обновление аэропортов
 
+
+
+
+Есть смысл перейти — библиотека ryanair-py от Ciarán Ó hAoláin куда более зрелая и поддерживаемая, чем pcjedi/ryanair:
+
+Звёздочки и поддержка
+– У ryanair-py ~57 ⭐ и 16 forks на GitHub против 3 ⭐ у pcjedi/ryanair 
+GitHub
+.
+– Активные коммиты, открытые issues и пулл-реквесты в 2023 году говорят о том, что проект живёт, в то время как pcjedi/ryanair не обновлялся с конца 2022-го.
+
+Доступность и лицензия
+– ryanair-py есть на PyPI (версия 3.0.0, релиз 18 септ. 2023) — ставится одной командой pip install ryanair-py 
+PyPI
+.
+– Распространяется под MIT-лицензией (в репозитории указана LICENSE.md), так что полная свобода использования в коммерческих и личных проектах.
+
+Насчёт миграции
+API обеих библиотек примерно одинаковое (методы вроде get_cheapest_flights и get_cheapest_return_flights), но придётся:
+
+Заменить импорт в flight_api.py:
+
+diff
+Копировать
+Редактировать
+- from ryanair import Ryanair
++ from ryanair_py import Ryanair
+Обновить вызовы: убедиться, что параметры (origin, destination, даты) совпадают, и что вы обрабатываете возвращаемые объекты (у ryanair-py они обёрнуты в класс Flight/Trip).
+
+Убрать/переделать update_airports.py: ryanair-py сам подтягивает актуальные справочные данные, CORS с GitHub-JSON, так что ваш собственный скрипт может стать ненужным.
+
+Протестировать каждый поток: в зависимости от того, как вы парсили ответ pcjedi-клиента, возможно, придётся поправить работу с context.user_data и форматирование.
+
+В целом — умеренно простой рефакторинг (несколько строк в import и вызовах), но даст более стабильную основу и избавит от самопальных JSON-дампов аэропортов.
+
+https://github.com/cohaolain/ryanair-py?utm_source=chatgpt.com
+
+https://pypi.org/project/ryanair-py/#:~:text=
+

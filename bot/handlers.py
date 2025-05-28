@@ -1566,68 +1566,498 @@ async def flex_ask_dates(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # должны быть обновлены, чтобы передавать keyboard_back_callback в ask_... функции,
 # аналогично стандартному поиску. Например:
 async def flex_departure_year_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query; await query.answer()
-    selected_year = int(query.data.replace(config.CALLBACK_PREFIX_FLEX + "dep_year_", ""))
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
+    try:
+        selected_year = int(query.data.replace(config.CALLBACK_PREFIX_FLEX + "dep_year_", ""))
+    except ValueError:
+        logger.warning("flex_departure_year_selected: ValueError parsing year.")
+        await query.edit_message_text("Ошибка формата года. Пожалуйста, начните заново /start.")
+        return ConversationHandler.END
+
     context.user_data['departure_year'] = selected_year
-    await ask_month(update, context, year_for_months=selected_year,
+
+    await ask_month(update, context, # Используем update, т.к. он содержит query для edit_message_text
+                  year_for_months=selected_year,
                   message_text=f"Год вылета: {selected_year}. Выберите месяц:",
                   callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_month_",
-                  keyboard_back_callback=config.CB_BACK_FLEX_DEP_MONTH_TO_YEAR) # Пример
+                  keyboard_back_callback=config.CB_BACK_FLEX_DEP_MONTH_TO_YEAR)
     return config.SELECTING_FLEX_DEPARTURE_MONTH
 
 async def flex_departure_month_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query; await query.answer()
-    try: selected_month = int(query.data.replace(config.CALLBACK_PREFIX_FLEX + "dep_month_", ""))
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
+    try:
+        selected_month = int(query.data.replace(config.CALLBACK_PREFIX_FLEX + "dep_month_", ""))
     except ValueError:
-        await query.edit_message_text("Ошибка формата месяца.")
-        await ask_year(query, context, "Выберите год вылета:",
+        logger.warning("flex_departure_month_selected: ValueError parsing month.")
+        await query.edit_message_text("Ошибка формата месяца. Попробуйте снова.")
+        await ask_year(query, context, "Выберите год вылета:", # query для edit_message_text
                        callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_year_",
                        keyboard_back_callback=config.CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES)
         return config.SELECTING_FLEX_DEPARTURE_YEAR
+
     year = context.user_data.get('departure_year')
-    # ... (валидация месяца) ...
-    # if ... : # если месяц прошел
-    #    await ask_month(update, ... keyboard_back_callback=config.CB_BACK_FLEX_DEP_MONTH_TO_YEAR)
-    #    return config.SELECTING_FLEX_DEPARTURE_MONTH
+    if not year:
+        await query.edit_message_text("Год вылета не найден. Начните /start.")
+        return ConversationHandler.END
+
+    now = datetime.now()
+    if year == now.year and selected_month < now.month:
+        month_name_rus = config.RUSSIAN_MONTHS.get(selected_month, str(selected_month))
+        await query.edit_message_text(text=f"Выбран прошедший месяц ({month_name_rus} {year}). Пожалуйста, выберите корректный месяц.")
+        await ask_month(update, context, year_for_months=year,
+                        message_text=f"Год вылета: {year}. Выберите месяц:",
+                        callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_month_",
+                        keyboard_back_callback=config.CB_BACK_FLEX_DEP_MONTH_TO_YEAR)
+        return config.SELECTING_FLEX_DEPARTURE_MONTH
+
     context.user_data['departure_month'] = selected_month
     month_name = config.RUSSIAN_MONTHS.get(selected_month, str(selected_month))
-    await ask_date_range(update, context, year, selected_month,
-                         f"Выбран: {month_name} {year}. Диапазон дат:",
-                         callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_range_",
-                         keyboard_back_callback=config.CB_BACK_FLEX_DEP_RANGE_TO_MONTH) # Пример
+    await ask_date_range(update, context, year, selected_month, # update содержит query
+                       f"Выбран: {month_name} {year}. Выберите диапазон дат:",
+                       callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_range_",
+                       keyboard_back_callback=config.CB_BACK_FLEX_DEP_RANGE_TO_MONTH)
     return config.SELECTING_FLEX_DEPARTURE_DATE_RANGE
 
-# И так далее для flex_departure_date_range_selected, flex_departure_date_selected,
-# flex_return_year_selected, flex_return_month_selected, flex_return_date_range_selected, flex_return_date_selected
+# НОВАЯ ФУНКЦИЯ (добавьте ее)
+async def flex_departure_date_range_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
+    selected_range_str = query.data.replace(config.CALLBACK_PREFIX_FLEX + "dep_range_", "")
+    try:
+        start_day, end_day = map(int, selected_range_str.split('-'))
+    except ValueError:
+        logger.warning("flex_departure_date_range_selected: ValueError parsing range.")
+        await query.edit_message_text("Некорректный диапазон. Выберите снова.")
+        year = context.user_data.get('departure_year')
+        if year:
+             await ask_month(update, context, year_for_months=year,
+                             message_text=f"Год вылета: {year}. Выберите месяц:",
+                             callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_month_",
+                             keyboard_back_callback=config.CB_BACK_FLEX_DEP_MONTH_TO_YEAR)
+             return config.SELECTING_FLEX_DEPARTURE_MONTH
+        return ConversationHandler.END
+
+    context.user_data['departure_date_range_str'] = selected_range_str
+    year = context.user_data['departure_year']
+    month = context.user_data['departure_month']
+    min_date_for_dep = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    month_name_rus = config.RUSSIAN_MONTHS.get(month, str(month))
+    await ask_specific_date(update, context, year, month, start_day, end_day, # update содержит query
+                            f"Диапазон: {start_day}-{end_day} {month_name_rus}. Выберите дату вылета:",
+                            callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_date_",
+                            min_allowed_date_for_comparison=min_date_for_dep,
+                            keyboard_back_callback=config.CB_BACK_FLEX_DEP_DATE_TO_RANGE)
+    return config.SELECTING_FLEX_DEPARTURE_DATE
 
 async def flex_departure_date_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query; await query.answer()
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
     selected_date_str = query.data.replace(config.CALLBACK_PREFIX_FLEX + "dep_date_", "")
-    # ... (валидация даты) ...
+    date_obj = helpers.validate_date_format(selected_date_str)
+    min_allowed_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if not date_obj or date_obj < min_allowed_date :
+        year = context.user_data.get('departure_year')
+        month = context.user_data.get('departure_month')
+        range_str = context.user_data.get('departure_date_range_str')
+        if year and month and range_str:
+            try:
+                start_day, end_day = map(int, range_str.split('-'))
+                month_name_rus = config.RUSSIAN_MONTHS.get(month, str(month))
+                await query.edit_message_text("Некорректная дата или дата в прошлом. Попробуйте снова.")
+                await ask_specific_date(update, context, year, month, start_day, end_day,
+                                        f"Диапазон: {start_day}-{end_day} {month_name_rus}. Выберите дату вылета:",
+                                        callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_date_",
+                                        min_allowed_date_for_comparison=min_allowed_date,
+                                        keyboard_back_callback=config.CB_BACK_FLEX_DEP_DATE_TO_RANGE)
+                return config.SELECTING_FLEX_DEPARTURE_DATE
+            except ValueError: pass
+        await query.edit_message_text("Ошибка даты. Начните /start.")
+        return ConversationHandler.END
+
     context.user_data['departure_date'] = selected_date_str
     if query.message:
-      try: await query.edit_message_text(text=f"Дата вылета: {datetime.strptime(selected_date_str, '%Y-%m-%d').strftime('%d-%m-%Y')}")
-      except Exception: pass
+      try: await query.edit_message_text(text=f"Дата вылета: {date_obj.strftime('%d-%m-%Y')}")
+      except Exception as e: logger.warning(f"flex_departure_date_selected: edit_message_text failed: {e}")
 
     if context.user_data.get('flight_type_one_way', True):
         return await launch_flight_search(update, context)
     else:
-        # update здесь - это CallbackQuery Update. ask_year ожидает его для edit_message_text.
-        await ask_year(query, context, "Выберите год обратного вылета:", # Используем query
+        await ask_year(query, context, "Выберите год обратного вылета:", # query для edit_message_text
                        callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_year_",
                        keyboard_back_callback=config.CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE)
         return config.SELECTING_FLEX_RETURN_YEAR
 
+# НОВАЯ ФУНКЦИЯ (добавьте ее)
+async def flex_return_year_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
+    try:
+        selected_return_year = int(query.data.replace(config.CALLBACK_PREFIX_FLEX + "ret_year_", ""))
+    except ValueError:
+        logger.error("flex_return_year_selected: ValueError parsing year")
+        await query.edit_message_text("Ошибка формата года возврата. /start")
+        return ConversationHandler.END
+
+    departure_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
+    if not departure_date_obj:
+        await query.edit_message_text("Ошибка: дата вылета не найдена. Начните /start.")
+        return ConversationHandler.END
+
+    if selected_return_year < departure_date_obj.year:
+        await query.edit_message_text(text=f"Год возврата ({selected_return_year}) не может быть раньше года вылета ({departure_date_obj.year}).")
+        await ask_year(query, context, "Выберите корректный год обратного вылета:",
+                       callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_year_",
+                       keyboard_back_callback=config.CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE)
+        return config.SELECTING_FLEX_RETURN_YEAR
+
+    context.user_data['return_year'] = selected_return_year
+
+    min_ret_month_for_comp = 1
+    if selected_return_year == departure_date_obj.year:
+        min_ret_month_for_comp = departure_date_obj.month
+
+    await ask_month(update, context, # update содержит query
+                  year_for_months=selected_return_year,
+                  message_text=f"Год обратного вылета: {selected_return_year}. Выберите месяц:",
+                  callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_month_",
+                  departure_year_for_comparison=departure_date_obj.year,
+                  departure_month_for_comparison=min_ret_month_for_comp,
+                  keyboard_back_callback=config.CB_BACK_FLEX_RET_MONTH_TO_YEAR)
+    return config.SELECTING_FLEX_RETURN_MONTH
+
+# НОВАЯ ФУНКЦИЯ (добавьте ее)
+async def flex_return_month_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
+    try:
+        selected_return_month = int(query.data.replace(config.CALLBACK_PREFIX_FLEX + "ret_month_", ""))
+    except ValueError:
+        logger.warning("flex_return_month_selected: ValueError parsing month.")
+        await query.edit_message_text("Ошибка формата месяца.")
+        await ask_year(query, context, "Выберите год обратного вылета:",
+                       callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_year_",
+                       keyboard_back_callback=config.CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE)
+        return config.SELECTING_FLEX_RETURN_YEAR
+
+    return_year = context.user_data.get('return_year')
+    departure_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
+
+    if not return_year or not departure_date_obj:
+        await query.edit_message_text("Ошибка данных о датах. /start")
+        return ConversationHandler.END
+
+    if return_year == departure_date_obj.year and selected_return_month < departure_date_obj.month:
+        await query.edit_message_text("Месяц возврата не может быть раньше месяца вылета в том же году.")
+        min_ret_month_for_comp = departure_date_obj.month # Гарантированно тот же год
+        await ask_month(update, context, return_year,
+                        f"Год обратного вылета: {return_year}. Выберите месяц:",
+                        config.CALLBACK_PREFIX_FLEX + "ret_month_",
+                        departure_date_obj.year, min_ret_month_for_comp,
+                        keyboard_back_callback=config.CB_BACK_FLEX_RET_MONTH_TO_YEAR)
+        return config.SELECTING_FLEX_RETURN_MONTH
+
+    context.user_data['return_month'] = selected_return_month
+    month_name = config.RUSSIAN_MONTHS.get(selected_return_month, str(selected_return_month))
+    await ask_date_range(update, context, return_year, selected_return_month, # update содержит query
+                         f"Выбран: {month_name} {return_year}. Диапазон дат для возврата:",
+                         callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_range_",
+                         keyboard_back_callback=config.CB_BACK_FLEX_RET_RANGE_TO_MONTH)
+    return config.SELECTING_FLEX_RETURN_DATE_RANGE
+
+# НОВАЯ ФУНКЦИЯ (добавьте ее)
+async def flex_return_date_range_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
+    selected_range_str = query.data.replace(config.CALLBACK_PREFIX_FLEX + "ret_range_", "")
+    try:
+        start_day, end_day = map(int, selected_range_str.split('-'))
+    except ValueError:
+        logger.warning("flex_return_date_range_selected: ValueError parsing range.")
+        await query.edit_message_text("Некорректный диапазон.")
+        year = context.user_data.get('return_year')
+        dep_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
+        min_ret_month_for_comp = 1
+        if dep_date_obj and year == dep_date_obj.year:
+            min_ret_month_for_comp = dep_date_obj.month
+
+        if year and dep_date_obj:
+            await ask_month(update, context, year, f"Год обратного вылета: {year}. Выберите месяц:",
+                            config.CALLBACK_PREFIX_FLEX + "ret_month_",
+                            dep_date_obj.year, min_ret_month_for_comp,
+                            keyboard_back_callback=config.CB_BACK_FLEX_RET_MONTH_TO_YEAR)
+            return config.SELECTING_FLEX_RETURN_MONTH
+        return ConversationHandler.END
+
+    context.user_data['return_date_range_str'] = selected_range_str
+    year = context.user_data['return_year']
+    month = context.user_data['return_month']
+    departure_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
+    if not departure_date_obj:
+        await query.edit_message_text("Ошибка: дата вылета не найдена. /start")
+        return ConversationHandler.END
+
+    # Минимальная дата для возврата - это дата вылета (включительно)
+    min_allowed_return_date = departure_date_obj
+    
+    # Корректируем start_day для клавиатуры, если он раньше даты вылета в том же месяце
+    # Это для корректного отображения кнопок generate_specific_date_buttons
+    temp_start_day_for_buttons = start_day
+    if year == departure_date_obj.year and month == departure_date_obj.month:
+        temp_start_day_for_buttons = max(start_day, departure_date_obj.day)
+    
+    # Если после коррекции temp_start_day_for_buttons стал больше end_day, значит в этом диапазоне нет валидных дат.
+    if temp_start_day_for_buttons > end_day:
+        await query.edit_message_text("В этом диапазоне нет доступных дат после учета даты вылета. Пожалуйста, выберите другой диапазон или месяц.")
+        # Возврат к выбору месяца возврата
+        min_ret_month_fallback = departure_date_obj.month if year == departure_date_obj.year else 1
+        await ask_month(update, context, year,
+                        f"Год обратного вылета: {year}. Выберите месяц:",
+                        config.CALLBACK_PREFIX_FLEX + "ret_month_",
+                        departure_date_obj.year, min_ret_month_fallback,
+                        keyboard_back_callback=config.CB_BACK_FLEX_RET_MONTH_TO_YEAR)
+        return config.SELECTING_FLEX_RETURN_MONTH
+
+    month_name_rus = config.RUSSIAN_MONTHS.get(month, str(month))
+    await ask_specific_date(update, context, year, month, temp_start_day_for_buttons, end_day, # update содержит query
+                            f"Диапазон: {start_day}-{end_day} {month_name_rus}. Выберите дату возврата:",
+                            callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_date_",
+                            min_allowed_date_for_comparison=min_allowed_return_date,
+                            keyboard_back_callback=config.CB_BACK_FLEX_RET_DATE_TO_RANGE)
+    return config.SELECTING_FLEX_RETURN_DATE
+
 async def flex_return_date_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # ... (аналогично standard_return_date_selected, но с CB_BACK_FLEX_... и префиксами FLEX)
-    query = update.callback_query; await query.answer()
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
     selected_date_str = query.data.replace(config.CALLBACK_PREFIX_FLEX + "ret_date_", "")
-    # ... (валидация) ...
+    return_date_obj = helpers.validate_date_format(selected_date_str)
+    departure_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
+
+    if not return_date_obj or not departure_date_obj or return_date_obj < departure_date_obj:
+        year = context.user_data.get('return_year')
+        month = context.user_data.get('return_month')
+        range_str = context.user_data.get('return_date_range_str')
+        if year and month and range_str and departure_date_obj:
+             try:
+                 start_day_orig, end_day_orig = map(int, range_str.split('-'))
+                 # Корректируем start_day для кнопок, как это делалось в flex_return_date_range_selected
+                 start_day_buttons = start_day_orig
+                 if year == departure_date_obj.year and month == departure_date_obj.month:
+                     start_day_buttons = max(start_day_orig, departure_date_obj.day)
+
+                 month_name_rus = config.RUSSIAN_MONTHS.get(month, str(month))
+                 await query.edit_message_text("Некорректная дата возврата (раньше даты вылета или в прошлом). Попробуйте снова.")
+                 await ask_specific_date(update, context, year, month, start_day_buttons, end_day_orig,
+                                        f"Диапазон: {start_day_orig}-{end_day_orig} {month_name_rus}. Выберите дату возврата:",
+                                        callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_date_",
+                                        min_allowed_date_for_comparison=departure_date_obj,
+                                        keyboard_back_callback=config.CB_BACK_FLEX_RET_DATE_TO_RANGE)
+                 return config.SELECTING_FLEX_RETURN_DATE
+             except ValueError: pass
+        await query.edit_message_text("Ошибка даты возврата. Начните /start.")
+        return ConversationHandler.END
+
     context.user_data['return_date'] = selected_date_str
     if query.message:
-        try: await query.edit_message_text(text=f"Дата обратного вылета: {datetime.strptime(selected_date_str, '%Y-%m-%d').strftime('%d-%m-%Y')}")
-        except Exception: pass
+        try: await query.edit_message_text(text=f"Дата обратного вылета: {return_date_obj.strftime('%d-%m-%Y')}")
+        except Exception as e: logger.warning(f"flex_return_date_selected: edit_message_text failed: {e}")
     return await launch_flight_search(update, context)
+
+
+# --- ГИБКИЙ ПОИСК - ОБРАБОТЧИКИ "НАЗАД" ДЛЯ ДАТ ---
+
+async def back_flex_dep_year_to_ask_dates_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
+    context.user_data.pop('departure_year', None)
+    context.user_data.pop('departure_month', None)
+    context.user_data.pop('departure_date_range_str', None)
+    context.user_data.pop('departure_date', None)
+
+    back_cb_for_ask_dates = config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR
+    if context.user_data.get('arrival_airport_iata') is not None and context.user_data.get('arrival_city_name'):
+        back_cb_for_ask_dates = config.CB_BACK_FLEX_ASK_DATES_TO_ARR_CITY
+    elif context.user_data.get('departure_city_name') and context.user_data.get('arrival_airport_iata') is None: # Если город вылета есть, а прилета нет
+        back_cb_for_ask_dates = config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR
+
+    await query.edit_message_text(
+        text="Указать конкретные даты?",
+        reply_markup=keyboards.get_skip_dates_keyboard(
+            callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes",
+            back_callback_data=back_cb_for_ask_dates
+        )
+    )
+    return config.ASK_FLEX_DATES
+
+async def back_flex_dep_month_to_year_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
+    context.user_data.pop('departure_month', None)
+    context.user_data.pop('departure_date_range_str', None)
+    context.user_data.pop('departure_date', None)
+
+    await ask_year(query, context,
+                   "Выберите год вылета:",
+                   callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_year_",
+                   keyboard_back_callback=config.CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES)
+    return config.SELECTING_FLEX_DEPARTURE_YEAR
+
+async def back_flex_dep_range_to_month_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
+    year = context.user_data.get('departure_year')
+    context.user_data.pop('departure_date_range_str', None)
+    context.user_data.pop('departure_date', None)
+
+    if not year:
+        await query.edit_message_text("Ошибка: год вылета не найден. /start")
+        return ConversationHandler.END
+
+    await ask_month(query, context,
+                  year_for_months=year,
+                  message_text=f"Год вылета: {year}. Выберите месяц:",
+                  callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_month_",
+                  keyboard_back_callback=config.CB_BACK_FLEX_DEP_MONTH_TO_YEAR)
+    return config.SELECTING_FLEX_DEPARTURE_MONTH
+
+async def back_flex_dep_date_to_range_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
+    year = context.user_data.get('departure_year')
+    month = context.user_data.get('departure_month')
+    context.user_data.pop('departure_date', None)
+
+    if not year or not month:
+        await query.edit_message_text("Ошибка: год или месяц вылета не найдены. /start")
+        return ConversationHandler.END
+
+    month_name = config.RUSSIAN_MONTHS.get(month, str(month))
+    await ask_date_range(query, context, year, month,
+                       f"Выбран: {month_name} {year}. Выберите диапазон дат:",
+                       callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_range_",
+                       keyboard_back_callback=config.CB_BACK_FLEX_DEP_RANGE_TO_MONTH)
+    return config.SELECTING_FLEX_DEPARTURE_DATE_RANGE
+
+async def back_flex_ret_year_to_dep_date_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
+    context.user_data.pop('return_year', None)
+    context.user_data.pop('return_month', None)
+    context.user_data.pop('return_date_range_str', None)
+    context.user_data.pop('return_date', None)
+
+    # Возвращаемся к этапу выбора конкретной даты вылета
+    year = context.user_data.get('departure_year')
+    month = context.user_data.get('departure_month')
+    range_str = context.user_data.get('departure_date_range_str')
+
+    if not (year and month and range_str):
+        await query.edit_message_text("Не удалось восстановить предыдущий шаг выбора даты вылета. /start")
+        return ConversationHandler.END
+    try:
+        start_day, end_day = map(int, range_str.split('-'))
+    except ValueError:
+        await query.edit_message_text("Ошибка в данных диапазона дат вылета. /start")
+        return ConversationHandler.END
+
+    min_date_for_dep = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    month_name_rus = config.RUSSIAN_MONTHS.get(month, str(month))
+    await ask_specific_date(query, context, year, month, start_day, end_day,
+                            f"Диапазон: {start_day}-{end_day} {month_name_rus}. Выберите дату вылета:",
+                            callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_date_",
+                            min_allowed_date_for_comparison=min_date_for_dep,
+                            keyboard_back_callback=config.CB_BACK_FLEX_DEP_DATE_TO_RANGE)
+    return config.SELECTING_FLEX_DEPARTURE_DATE
+
+async def back_flex_ret_month_to_year_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
+    context.user_data.pop('return_month', None)
+    context.user_data.pop('return_date_range_str', None)
+    context.user_data.pop('return_date', None)
+
+    # Возвращаемся к выбору года возврата
+    dep_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
+    if not dep_date_obj:
+        await query.edit_message_text("Ошибка: дата вылета не найдена. /start")
+        return ConversationHandler.END
+
+    await ask_year(query, context,
+                   "Выберите год обратного вылета:",
+                   callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_year_",
+                   keyboard_back_callback=config.CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE)
+    return config.SELECTING_FLEX_RETURN_YEAR
+
+async def back_flex_ret_range_to_month_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
+    year = context.user_data.get('return_year')
+    context.user_data.pop('return_date_range_str', None)
+    context.user_data.pop('return_date', None)
+
+    if not year:
+        await query.edit_message_text("Ошибка: год возврата не найден. /start")
+        return ConversationHandler.END
+
+    departure_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
+    if not departure_date_obj:
+        await query.edit_message_text("Ошибка: дата вылета не найдена. /start")
+        return ConversationHandler.END
+
+    min_ret_month_for_comp = 1
+    if year == departure_date_obj.year:
+        min_ret_month_for_comp = departure_date_obj.month
+
+    await ask_month(query, context,
+                  year_for_months=year,
+                  message_text=f"Год обратного вылета: {year}. Выберите месяц:",
+                  callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_month_",
+                  departure_year_for_comparison=departure_date_obj.year,
+                  departure_month_for_comparison=min_ret_month_for_comp,
+                  keyboard_back_callback=config.CB_BACK_FLEX_RET_MONTH_TO_YEAR)
+    return config.SELECTING_FLEX_RETURN_MONTH
+
+async def back_flex_ret_date_to_range_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
+    year = context.user_data.get('return_year')
+    month = context.user_data.get('return_month')
+    context.user_data.pop('return_date', None)
+
+    if not year or not month:
+        await query.edit_message_text("Ошибка: год или месяц возврата не найдены. /start")
+        return ConversationHandler.END
+
+    departure_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
+    if not departure_date_obj: # Должна быть всегда, но на всякий случай
+        await query.edit_message_text("Ошибка: дата вылета не найдена. /start")
+        return ConversationHandler.END
+    
+    month_name = config.RUSSIAN_MONTHS.get(month, str(month))
+    await ask_date_range(query, context, year, month,
+                       f"Выбран: {month_name} {year}. Выберите диапазон дат для возврата:",
+                       callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_range_",
+                       keyboard_back_callback=config.CB_BACK_FLEX_RET_RANGE_TO_MONTH)
+    return config.SELECTING_FLEX_RETURN_DATE_RANGE
 
 # --- УНИВЕРСАЛЬНЫЕ ОБРАБОТЧИКИ ДЛЯ ЦЕНЫ (ОБНОВЛЕННЫЕ) ---
 async def handle_price_option_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1909,127 +2339,153 @@ async def handle_invalid_price_choice_fallback(update: Update, context: ContextT
 
 
 # --- СОЗДАНИЕ CONVERSATIONHANDLER (ОБНОВЛЕННОЕ) ---
+# В файле bot/handlers.py
+
 def create_conversation_handler() -> ConversationHandler:
-    price_option_pattern = f"^({config.CALLBACK_PRICE_CUSTOM}|{config.CALLBACK_PRICE_LOWEST}|{config.CALLBACK_PRICE_ALL})$"
-    price_fallback_pattern = r"^price_.*$"
+    price_option_pattern = f"^({config.CALLBACK_PRICE_CUSTOM}|{config.CALLBACK_PRICE_LOWEST}|{config.CALLBACK_PRICE_ALL})$" #
+    # Паттерн для отлова любых callback_data, начинающихся с "price_", чтобы обработать их в fallback, если они невалидны для текущего состояния.
+    price_fallback_pattern = r"^price_.*$" #
 
     conv_handler = ConversationHandler(
         entry_points=[
-            CommandHandler('start', start_command),
-            CallbackQueryHandler(start_search_callback, pattern='^(start_standard_search|start_flex_search)$'),
-            CallbackQueryHandler(start_flex_anywhere_callback, pattern='^start_flex_anywhere$')
+            CommandHandler('start', start_command), #
+            CallbackQueryHandler(start_search_callback, pattern='^(start_standard_search|start_flex_search)$'), #
+            CallbackQueryHandler(start_flex_anywhere_callback, pattern='^start_flex_anywhere$') #
         ],
         states={
             # --- Стандартный поиск ---
-            config.S_SELECTING_FLIGHT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_flight_type)],
-            config.S_SELECTING_DEPARTURE_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_departure_country)],
-            config.S_SELECTING_DEPARTURE_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_departure_city)],
-            config.S_SELECTING_DEPARTURE_YEAR: [
-                CallbackQueryHandler(standard_departure_year_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_year_"),
-                CallbackQueryHandler(back_std_dep_year_to_city_handler, pattern=f"^{config.CB_BACK_STD_DEP_YEAR_TO_CITY}$")
+            config.S_SELECTING_FLIGHT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_flight_type)], #
+            config.S_SELECTING_DEPARTURE_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_departure_country)], #
+            config.S_SELECTING_DEPARTURE_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_departure_city)], #
+            config.S_SELECTING_DEPARTURE_YEAR: [ #
+                CallbackQueryHandler(standard_departure_year_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_year_"), #
+                CallbackQueryHandler(back_std_dep_year_to_city_handler, pattern=f"^{config.CB_BACK_STD_DEP_YEAR_TO_CITY}$") #
             ],
-            config.S_SELECTING_DEPARTURE_MONTH: [
-                CallbackQueryHandler(standard_departure_month_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_month_"),
-                CallbackQueryHandler(back_std_dep_month_to_year_handler, pattern=f"^{config.CB_BACK_STD_DEP_MONTH_TO_YEAR}$")
+            config.S_SELECTING_DEPARTURE_MONTH: [ #
+                CallbackQueryHandler(standard_departure_month_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_month_"), #
+                CallbackQueryHandler(back_std_dep_month_to_year_handler, pattern=f"^{config.CB_BACK_STD_DEP_MONTH_TO_YEAR}$") #
             ],
-            config.S_SELECTING_DEPARTURE_DATE_RANGE: [
-                CallbackQueryHandler(standard_departure_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_range_"),
-                CallbackQueryHandler(back_std_dep_range_to_month_handler, pattern=f"^{config.CB_BACK_STD_DEP_RANGE_TO_MONTH}$")
+            config.S_SELECTING_DEPARTURE_DATE_RANGE: [ #
+                CallbackQueryHandler(standard_departure_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_range_"), #
+                CallbackQueryHandler(back_std_dep_range_to_month_handler, pattern=f"^{config.CB_BACK_STD_DEP_RANGE_TO_MONTH}$") #
             ],
-            config.S_SELECTING_DEPARTURE_DATE: [
-                CallbackQueryHandler(standard_departure_date_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_date_"),
-                CallbackQueryHandler(back_std_dep_date_to_range_handler, pattern=f"^{config.CB_BACK_STD_DEP_DATE_TO_RANGE}$")
+            config.S_SELECTING_DEPARTURE_DATE: [ #
+                CallbackQueryHandler(standard_departure_date_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_date_"), #
+                CallbackQueryHandler(back_std_dep_date_to_range_handler, pattern=f"^{config.CB_BACK_STD_DEP_DATE_TO_RANGE}$") #
             ],
-            config.S_SELECTING_ARRIVAL_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_arrival_country)], # Добавить "Назад" если нужно
-            config.S_SELECTING_ARRIVAL_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_arrival_city)], # Добавить "Назад" если нужно
+            config.S_SELECTING_ARRIVAL_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_arrival_country)], #
+            config.S_SELECTING_ARRIVAL_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_arrival_city)], #
 
-            config.S_SELECTING_RETURN_YEAR: [
-                CallbackQueryHandler(standard_return_year_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_year_"),
-                CallbackQueryHandler(back_std_ret_year_to_arr_city_handler, pattern=f"^{config.CB_BACK_STD_RET_YEAR_TO_ARR_CITY}$")
+            config.S_SELECTING_RETURN_YEAR: [ #
+                CallbackQueryHandler(standard_return_year_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_year_"), #
+                CallbackQueryHandler(back_std_ret_year_to_arr_city_handler, pattern=f"^{config.CB_BACK_STD_RET_YEAR_TO_ARR_CITY}$") #
             ],
-            config.S_SELECTING_RETURN_MONTH: [
-                CallbackQueryHandler(standard_return_month_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_month_"),
-                CallbackQueryHandler(back_std_ret_month_to_year_handler, pattern=f"^{config.CB_BACK_STD_RET_MONTH_TO_YEAR}$")
+            config.S_SELECTING_RETURN_MONTH: [ #
+                CallbackQueryHandler(standard_return_month_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_month_"), #
+                CallbackQueryHandler(back_std_ret_month_to_year_handler, pattern=f"^{config.CB_BACK_STD_RET_MONTH_TO_YEAR}$") #
             ],
-            config.S_SELECTING_RETURN_DATE_RANGE: [
-                CallbackQueryHandler(standard_return_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_range_"),
-                CallbackQueryHandler(back_std_ret_range_to_month_handler, pattern=f"^{config.CB_BACK_STD_RET_RANGE_TO_MONTH}$")
+            config.S_SELECTING_RETURN_DATE_RANGE: [ #
+                CallbackQueryHandler(standard_return_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_range_"), #
+                CallbackQueryHandler(back_std_ret_range_to_month_handler, pattern=f"^{config.CB_BACK_STD_RET_RANGE_TO_MONTH}$") #
             ],
-            config.S_SELECTING_RETURN_DATE: [
-                CallbackQueryHandler(standard_return_date_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_date_"),
-                CallbackQueryHandler(back_std_ret_date_to_range_handler, pattern=f"^{config.CB_BACK_STD_RET_DATE_TO_RANGE}$")
+            config.S_SELECTING_RETURN_DATE: [ #
+                CallbackQueryHandler(standard_return_date_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_date_"), #
+                CallbackQueryHandler(back_std_ret_date_to_range_handler, pattern=f"^{config.CB_BACK_STD_RET_DATE_TO_RANGE}$") #
             ],
 
             # --- Гибкий поиск ---
-            config.SELECTING_FLEX_FLIGHT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, flex_flight_type)],
-            config.ASK_FLEX_DEPARTURE_AIRPORT: [
-                CallbackQueryHandler(flex_ask_departure_airport, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ask_dep_"),
-                CallbackQueryHandler(back_flex_ask_dep_to_price_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_DEP_TO_PRICE}$")
+            config.SELECTING_FLEX_FLIGHT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, flex_flight_type)], #
+            config.ASK_FLEX_DEPARTURE_AIRPORT: [ #
+                CallbackQueryHandler(flex_ask_departure_airport, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ask_dep_"), #
+                CallbackQueryHandler(back_flex_ask_dep_to_price_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_DEP_TO_PRICE}$") #
             ],
-            config.SELECTING_FLEX_DEPARTURE_COUNTRY: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, flex_departure_country),
-                # CallbackQueryHandler(back_flex_dep_country_to_ask_dep_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_COUNTRY_TO_ASK_DEP}$") # Если бы была инлайн кнопка "назад"
+            config.SELECTING_FLEX_DEPARTURE_COUNTRY: [ #
+                MessageHandler(filters.TEXT & ~filters.COMMAND, flex_departure_country), #
+                # Кнопка "Назад" для ReplyKeyboard обычно обрабатывается через /cancel или неявный возврат при ошибке
             ],
-            config.SELECTING_FLEX_DEPARTURE_CITY: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, flex_departure_city),
-                # CallbackQueryHandler(back_flex_dep_city_to_dep_country_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_CITY_TO_DEP_COUNTRY}$")
+            config.SELECTING_FLEX_DEPARTURE_CITY: [ #
+                MessageHandler(filters.TEXT & ~filters.COMMAND, flex_departure_city), #
             ],
-            config.ASK_FLEX_ARRIVAL_AIRPORT: [
-                CallbackQueryHandler(flex_ask_arrival_airport, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ask_arr_"),
-                CallbackQueryHandler(back_flex_ask_arr_to_dep_city_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_ARR_TO_DEP_CITY}$")
+            config.ASK_FLEX_ARRIVAL_AIRPORT: [ #
+                CallbackQueryHandler(flex_ask_arrival_airport, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ask_arr_"), #
+                CallbackQueryHandler(back_flex_ask_arr_to_dep_city_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_ARR_TO_DEP_CITY}$") #
             ],
-            config.SELECTING_FLEX_ARRIVAL_COUNTRY: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, flex_arrival_country),
-                # CallbackQueryHandler(back_flex_arr_country_to_ask_arr_handler, pattern=f"^{config.CB_BACK_FLEX_ARR_COUNTRY_TO_ASK_ARR}$")
+            config.SELECTING_FLEX_ARRIVAL_COUNTRY: [ #
+                MessageHandler(filters.TEXT & ~filters.COMMAND, flex_arrival_country), #
             ],
-            config.SELECTING_FLEX_ARRIVAL_CITY: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, flex_arrival_city),
-                # CallbackQueryHandler(back_flex_arr_city_to_arr_country_handler, pattern=f"^{config.CB_BACK_FLEX_ARR_CITY_TO_ARR_COUNTRY}$")
+            config.SELECTING_FLEX_ARRIVAL_CITY: [ #
+                MessageHandler(filters.TEXT & ~filters.COMMAND, flex_arrival_city), #
             ],
-            config.ASK_FLEX_DATES: [
-                CallbackQueryHandler(flex_ask_dates, pattern=f"^(?:{config.CALLBACK_PREFIX_FLEX}ask_dates_yes|{config.CALLBACK_NO_SPECIFIC_DATES})$"),
-                CallbackQueryHandler(back_flex_ask_dates_to_location_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_DATES_TO_ARR_CITY}$"), # Этот или следующий, в зависимости от того, был ли город прилета
-                CallbackQueryHandler(back_flex_ask_dates_to_location_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR}$")
+            config.ASK_FLEX_DATES: [ #
+                CallbackQueryHandler(flex_ask_dates, pattern=f"^(?:{config.CALLBACK_PREFIX_FLEX}ask_dates_yes|{config.CALLBACK_NO_SPECIFIC_DATES})$"), #
+                CallbackQueryHandler(back_flex_ask_dates_to_location_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_DATES_TO_ARR_CITY}$"), #
+                CallbackQueryHandler(back_flex_ask_dates_to_location_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR}$") #
             ],
-            # Для SELECTING_FLEX_..._YEAR/MONTH/DATE_RANGE/DATE нужно будет добавить аналогичные "назад" обработчики,
-            # как в стандартном поиске, но с FLEX префиксами и FLEX CB_BACK_... константами
-            config.SELECTING_FLEX_DEPARTURE_YEAR: [
-                CallbackQueryHandler(flex_departure_year_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_year_"),
-                # CallbackQueryHandler(back_flex_dep_year_to_ask_dates_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES}$")
+            config.SELECTING_FLEX_DEPARTURE_YEAR: [ #
+                CallbackQueryHandler(flex_departure_year_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_year_"), #
+                CallbackQueryHandler(back_flex_dep_year_to_ask_dates_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES}$") #
             ],
-            # И так далее для SELECTING_FLEX_DEPARTURE_MONTH, SELECTING_FLEX_DEPARTURE_DATE_RANGE, SELECTING_FLEX_DEPARTURE_DATE
-            # И для дат возврата в гибком поиске: SELECTING_FLEX_RETURN_YEAR, ...
+            config.SELECTING_FLEX_DEPARTURE_MONTH: [ #
+                CallbackQueryHandler(flex_departure_month_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_month_"), #
+                CallbackQueryHandler(back_flex_dep_month_to_year_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_MONTH_TO_YEAR}$") #
+            ],
+            config.SELECTING_FLEX_DEPARTURE_DATE_RANGE: [ #
+                CallbackQueryHandler(flex_departure_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_range_"), #
+                CallbackQueryHandler(back_flex_dep_range_to_month_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_RANGE_TO_MONTH}$") #
+            ],
+            config.SELECTING_FLEX_DEPARTURE_DATE: [ #
+                CallbackQueryHandler(flex_departure_date_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_date_"), #
+                CallbackQueryHandler(back_flex_dep_date_to_range_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_DATE_TO_RANGE}$") #
+            ],
+            config.SELECTING_FLEX_RETURN_YEAR: [ #
+                CallbackQueryHandler(flex_return_year_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_year_"), #
+                CallbackQueryHandler(back_flex_ret_year_to_dep_date_handler, pattern=f"^{config.CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE}$") #
+            ],
+            config.SELECTING_FLEX_RETURN_MONTH: [ #
+                CallbackQueryHandler(flex_return_month_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_month_"), #
+                CallbackQueryHandler(back_flex_ret_month_to_year_handler, pattern=f"^{config.CB_BACK_FLEX_RET_MONTH_TO_YEAR}$") #
+            ],
+            config.SELECTING_FLEX_RETURN_DATE_RANGE: [ #
+                CallbackQueryHandler(flex_return_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_range_"), #
+                CallbackQueryHandler(back_flex_ret_range_to_month_handler, pattern=f"^{config.CB_BACK_FLEX_RET_RANGE_TO_MONTH}$") #
+            ],
+            config.SELECTING_FLEX_RETURN_DATE: [ #
+                CallbackQueryHandler(flex_return_date_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_date_"), #
+                CallbackQueryHandler(back_flex_ret_date_to_range_handler, pattern=f"^{config.CB_BACK_FLEX_RET_DATE_TO_RANGE}$") #
+            ],
 
             # --- ОБЩИЕ СОСТОЯНИЯ ДЛЯ ЦЕНЫ ---
-            config.SELECTING_PRICE_OPTION: [
-                CallbackQueryHandler(handle_price_option_selected, pattern=price_option_pattern),
-                CallbackQueryHandler(back_price_to_std_arr_city_oneway_handler, pattern=f"^{config.CB_BACK_PRICE_TO_STD_ARR_CITY_ONEWAY}$"),
-                CallbackQueryHandler(back_price_to_std_ret_date_twoway_handler, pattern=f"^{config.CB_BACK_PRICE_TO_STD_RET_DATE_TWOWAY}$"),
-                CallbackQueryHandler(back_price_to_flex_flight_type_handler, pattern=f"^{config.CB_BACK_PRICE_TO_FLEX_FLIGHT_TYPE}$"),
-                CallbackQueryHandler(back_price_to_entering_custom_handler, pattern=f"^{config.CB_BACK_PRICE_TO_ENTERING_CUSTOM}$") # Назад от ввода цены к выбору опции
+            config.SELECTING_PRICE_OPTION: [ #
+                CallbackQueryHandler(handle_price_option_selected, pattern=price_option_pattern), #
+                CallbackQueryHandler(back_price_to_std_arr_city_oneway_handler, pattern=f"^{config.CB_BACK_PRICE_TO_STD_ARR_CITY_ONEWAY}$"), #
+                CallbackQueryHandler(back_price_to_std_ret_date_twoway_handler, pattern=f"^{config.CB_BACK_PRICE_TO_STD_RET_DATE_TWOWAY}$"), #
+                CallbackQueryHandler(back_price_to_flex_flight_type_handler, pattern=f"^{config.CB_BACK_PRICE_TO_FLEX_FLIGHT_TYPE}$"), #
+                CallbackQueryHandler(back_price_to_entering_custom_handler, pattern=f"^{config.CB_BACK_PRICE_TO_ENTERING_CUSTOM}$") #
             ],
-            config.ENTERING_CUSTOM_PRICE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, enter_custom_price_handler),
-                # Если бы отсюда была инлайн кнопка "Назад", она бы здесь регистрировалась.
-                # Сейчас возврат при ошибке происходит через get_price_options_keyboard
-                CallbackQueryHandler(back_price_to_entering_custom_handler, pattern=f"^{config.CB_BACK_PRICE_TO_ENTERING_CUSTOM}$")
+            config.ENTERING_CUSTOM_PRICE: [ #
+                MessageHandler(filters.TEXT & ~filters.COMMAND, enter_custom_price_handler), #
+                # "Назад" отсюда обрабатывается при неверном вводе цены, показывая снова опции цены
+                CallbackQueryHandler(back_price_to_entering_custom_handler, pattern=f"^{config.CB_BACK_PRICE_TO_ENTERING_CUSTOM}$") #
             ],
 
-            config.ASK_SEARCH_OTHER_AIRPORTS: [
-                CallbackQueryHandler(handle_search_other_airports_decision, pattern=f"^{config.CALLBACK_YES_OTHER_AIRPORTS}$|^{config.CALLBACK_NO_OTHER_AIRPORTS}$")
+            config.ASK_SEARCH_OTHER_AIRPORTS: [ #
+                CallbackQueryHandler(handle_search_other_airports_decision, pattern=f"^{config.CALLBACK_YES_OTHER_AIRPORTS}$|^{config.CALLBACK_NO_OTHER_AIRPORTS}$") #
             ],
         },
         fallbacks=[
-            CommandHandler('cancel', cancel_handler),
-            CallbackQueryHandler(handle_invalid_price_choice_fallback, pattern=price_fallback_pattern),
-            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_valid_months_error$"),
-            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_valid_dates_error$"),
-            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_specific_dates_in_range_error$"),
-            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_valid_date_ranges_error$"),
-            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_dates$"),
+            CommandHandler('cancel', cancel_handler), #
+            # Отлов "неправильных" нажатий на кнопки цен, если диалог не в том состоянии
+            CallbackQueryHandler(handle_invalid_price_choice_fallback, pattern=price_fallback_pattern), #
+            # Отлов callback_data от неактуальных клавиатур (например, если пользователь долго думал)
+            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_valid_months_error$"), #
+            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_valid_dates_error$"), #
+            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_specific_dates_in_range_error$"), #
+            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_valid_date_ranges_error$"), #
+            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_dates$"), #
+
         ],
-        map_to_parent={},
-        per_message=False,
-        allow_reentry=True,
+        map_to_parent={}, #
+        per_message=False, #
+        allow_reentry=True, #
     )
     return conv_handler
