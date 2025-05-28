@@ -418,113 +418,101 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
     context.user_data.pop('remaining_flights_to_show', None)
 
     if not flights_by_date:
-        # ... (существующий код для случаев, когда рейсы не найдены)
-        # BEGINNING OF EXISTING NO FLIGHTS CODE
-        await context.bot.send_message(chat_id=chat_id, text=config.MSG_NO_FLIGHTS_FOUND)
-        dep_country = context.user_data.get('departure_country')
-        dep_airport_iata = context.user_data.get('departure_airport_iata')
+        await context.bot.send_message(chat_id=chat_id, text=config.MSG_NO_FLIGHTS_FOUND) #
+        dep_country = context.user_data.get('departure_country') #
+        dep_airport_iata = context.user_data.get('departure_airport_iata') #
 
         if dep_country and dep_airport_iata and \
            config.COUNTRIES_DATA.get(dep_country) and \
            len(config.COUNTRIES_DATA[dep_country]) > 1 and \
-           not context.user_data.get("_already_searched_alternatives", False):
+           not context.user_data.get("_already_searched_alternatives", False): #
             await context.bot.send_message(
                 chat_id=chat_id,
-                text=f"Хотите поискать вылеты из других аэропортов в стране {dep_country} по этому же направлению и датам?",
-                reply_markup=keyboards.get_search_other_airports_keyboard(dep_country)
+                text=f"Хотите поискать вылеты из других аэропортов в стране {dep_country} по этому же направлению и датам?", #
+                reply_markup=keyboards.get_search_other_airports_keyboard(dep_country) #
             )
-            return config.ASK_SEARCH_OTHER_AIRPORTS
+            return config.ASK_SEARCH_OTHER_AIRPORTS #
 
         await context.bot.send_message(
-            chat_id=chat_id, text="Что дальше?",
+            chat_id=chat_id, text="Что дальше?", #
             reply_markup=keyboards.get_yes_no_keyboard(
-                yes_callback="prompt_new_search_type", no_callback="end_search_session",
-                yes_text="✅ Начать новый поиск", no_text="❌ Закончить"
+                yes_callback="prompt_new_search_type", no_callback="end_search_session", #
+                yes_text="✅ Начать новый поиск", no_text="❌ Закончить" #
             )
         )
-        # END OF EXISTING NO FLIGHTS CODE
-        return ConversationHandler.END
+        return ConversationHandler.END #
 
-    await context.bot.send_message(chat_id=chat_id, text=config.MSG_FLIGHTS_FOUND_SEE_BELOW)
+    await context.bot.send_message(chat_id=chat_id, text=config.MSG_FLIGHTS_FOUND_SEE_BELOW) #
+
+    # --- НАЧАЛО ИЗМЕНЕНИЙ ДЛЯ ГЛОБАЛЬНОЙ СОРТИРОВКИ ---
+    all_flights_with_original_date = []
+    for date_str, flights_list in flights_by_date.items():
+        for flight_obj in flights_list:
+            all_flights_with_original_date.append({'original_date_str': date_str, 'flight': flight_obj})
+
+    # Глобальная сортировка всех рейсов по цене
+    # Функция helpers.get_flight_price должна корректно извлекать цену из 'flight'
+    globally_sorted_flights_with_date = sorted(all_flights_with_original_date, key=lambda x: helpers.get_flight_price(x['flight']))
+
     flights_message_parts = []
-    sorted_dates = sorted(flights_by_date.keys()) # Даты остаются отсортированными по возрастанию
+    last_printed_date_str = None
 
-    for flight_date_str in sorted_dates:
-        flights_on_this_date = flights_by_date[flight_date_str]
-        if not flights_on_this_date:
-            continue
-        
-        # --- ДОБАВЛЕНО: Сортировка рейсов на эту дату по цене ---
-        try:
-            # Используем новую вспомогательную функцию helpers.get_flight_price для ключа сортировки
-            sorted_flights_on_this_date = sorted(flights_on_this_date, key=helpers.get_flight_price)
-        except Exception as e_sort:
-            logger.error(f"Ошибка при сортировке рейсов для даты {flight_date_str}: {e_sort}. Рейсы останутся несортированными для этой даты.")
-            sorted_flights_on_this_date = flights_on_this_date # В случае ошибки, используем исходный список
-        # --- КОНЕЦ ДОБАВЛЕННОГО ---
+    for item in globally_sorted_flights_with_date:
+        flight = item['flight']
+        original_date_str = item['original_date_str']
 
-        try:
-            date_obj = datetime.strptime(flight_date_str, "%Y-%m-%d")
-            formatted_date_header = f"\n--- 📅 *{date_obj.strftime('%d %B %Y (%A)')}* ---\n"
-        except ValueError:
-            formatted_date_header = f"\n--- 📅 *{flight_date_str}* ---\n"
-        flights_message_parts.append(formatted_date_header)
+        # Отображаем заголовок с датой, если она изменилась или это первый рейс в списке с этой датой
+        # Это поможет сохранить контекст даты, даже при глобальной сортировке
+        if original_date_str != last_printed_date_str:
+            try:
+                date_obj = datetime.strptime(original_date_str, "%Y-%m-%d") #
+                formatted_date_header = f"\n--- 📅 *{date_obj.strftime('%d %B %Y (%A)')}* ---\n" #
+                flights_message_parts.append(formatted_date_header)
+                last_printed_date_str = original_date_str
+            except ValueError:
+                 # Если дата в неожиданном формате, просто используем строку как есть
+                formatted_date_header = f"\n--- 📅 *{original_date_str}* ---\n" #
+                flights_message_parts.append(formatted_date_header)
+                last_printed_date_str = original_date_str
 
-        # Используем отсортированный список sorted_flights_on_this_date
-        for flight in sorted_flights_on_this_date: 
-            formatted_flight = helpers.format_flight_details(flight)
-            flights_message_parts.append(formatted_flight)
-        flights_message_parts.append("\n")
+
+        formatted_flight = helpers.format_flight_details(flight) #
+        flights_message_parts.append(formatted_flight)
+    
+    # --- КОНЕЦ ИЗМЕНЕНИЙ ДЛЯ ГЛОБАЛЬНОЙ СОРТИРОВКИ ---
 
     if flights_message_parts:
-        full_text = "".join(flights_message_parts)
-        # ВНИМАНИЕ: escape_markdown может изменить длину текста. 
-        # Если используется parse_mode='MarkdownV2', то экранирование нужно делать до разбиения на чанки.
-        # Однако, если форматирование в format_flight_details уже включает MarkdownV2 символы,
-        # то экранировать нужно осторожно или убедиться, что format_flight_details их правильно готовит.
-        # В вашем format_flight_details уже есть Markdown (*, ->), так что общий escape_markdown здесь может быть избыточен или даже вреден,
-        # если format_flight_details уже сам заботится об экранировании спецсимволов *внутри* значений (например, в названии аэропорта).
-        # Если format_flight_details НЕ экранирует пользовательские данные, то escape_markdown нужен.
-        # Для простоты, предполагаем, что format_flight_details возвращает "безопасный" Markdown.
-
-        max_telegram_message_length = 4096 
-        current_chunk = ""
-        for part in flights_message_parts:
-            if len(current_chunk) + len(part) > max_telegram_message_length:
-                if current_chunk: # Отправляем накопленный чанк
-                    try:
-                        # Попытка отправить с MarkdownV2, если format_flight_details его использует
-                        await context.bot.send_message(chat_id=chat_id, text=current_chunk, parse_mode='MarkdownV2')
-                    except Exception as e_md:
-                        logger.warning(f"Ошибка при отправке чанка рейсов с MarkdownV2: {e_md}. Попытка отправить как простой текст.")
-                        try:
-                            await context.bot.send_message(chat_id=chat_id, text=current_chunk) # Fallback на простой текст
-                        except Exception as fallback_e:
-                            logger.error(f"Не удалось отправить чанк даже как простой текст: {fallback_e}")
-                            # Можно отправить сообщение об ошибке отображения части результатов, если предыдущая отправка не удалась
-                current_chunk = part
-            else:
-                current_chunk += part
-        
-        if current_chunk: # Отправляем последний оставшийся чанк
-            try:
-                await context.bot.send_message(chat_id=chat_id, text=current_chunk, parse_mode='MarkdownV2')
-            except Exception as e_md:
-                logger.warning(f"Ошибка при отправке последнего чанка рейсов с MarkdownV2: {e_md}. Попытка отправить как простой текст.")
+        full_text = "".join(flights_message_parts) #
+        if not full_text.strip():
+            # Эта ситуация маловероятна, если flights_by_date не пуст, но на всякий случай
+            await context.bot.send_message(chat_id=chat_id, text=config.MSG_NO_FLIGHTS_FOUND)
+        else:
+            max_telegram_message_length = 4096 #
+            for i in range(0, len(full_text), max_telegram_message_length):
+                chunk = full_text[i:i + max_telegram_message_length]
                 try:
-                    await context.bot.send_message(chat_id=chat_id, text=current_chunk)
-                except Exception as fallback_e:
-                     logger.error(f"Не удалось отправить последний чанк даже как простой текст: {fallback_e}")
+                    await context.bot.send_message(chat_id=chat_id, text=chunk, parse_mode='MarkdownV2') #
+                except Exception as e_md:
+                    logger.warning(f"Ошибка при отправке чанка рейсов с MarkdownV2: {e_md}. Попытка отправить как простой текст.") #
+                    try:
+                        await context.bot.send_message(chat_id=chat_id, text=chunk) #
+                    except Exception as fallback_e:
+                        logger.error(f"Не удалось отправить чанк даже как простой текст: {fallback_e}") #
+                        # Сообщение об ошибке уже отправлено выше в e_md, или можно добавить специфичное здесь
+                        await context.bot.send_message(chat_id=chat_id, text="Произошла ошибка при отображении части результатов.") #
+    else:
+        # Если после всех обработок список для вывода пуст
+        await context.bot.send_message(chat_id=chat_id, text=config.MSG_NO_FLIGHTS_FOUND)
 
 
     await context.bot.send_message(
-        chat_id=chat_id, text="Что дальше?",
+        chat_id=chat_id, text="Что дальше?", #
         reply_markup=keyboards.get_yes_no_keyboard(
-            yes_callback="prompt_new_search_type", no_callback="end_search_session",
-            yes_text="✅ Начать новый поиск", no_text="❌ Закончить"
+            yes_callback="prompt_new_search_type", no_callback="end_search_session", #
+            yes_text="✅ Начать новый поиск", no_text="❌ Закончить" #
         )
     )
-    return ConversationHandler.END
+    return ConversationHandler.END #
 
 async def prompt_new_search_type_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
