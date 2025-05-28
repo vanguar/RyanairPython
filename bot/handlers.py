@@ -1870,6 +1870,35 @@ async def handle_invalid_price_choice_fallback(update: Update, context: ContextT
             f"{query.message.message_id if query.message else 'unknown'} в несоответствующем состоянии диалога."
         )
 
+async def flex_departure_date_range_selected(update, context) -> int:
+    query = update.callback_query
+    if not query:
+        return ConversationHandler.END
+    await query.answer()
+
+    # Извлекаем строку диапазона
+    selected_range_str = query.data.replace(config.CALLBACK_PREFIX_FLEX + "dep_range_", "")
+    try:
+        start_day, end_day = map(int, selected_range_str.split('-'))
+    except ValueError:
+        await query.edit_message_text("Неверный диапазон. Пожалуйста, выберите месяц снова.")
+        return config.SELECTING_FLEX_DEPARTURE_MONTH
+
+    # Сохраняем и переходим к выбору конкретной даты
+    context.user_data['departure_date_range_str'] = selected_range_str
+    year = context.user_data.get('departure_year')
+    month = context.user_data.get('departure_month')
+    min_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    await ask_specific_date(
+        update, context,
+        year, month,
+        start_day, end_day,
+        f"Диапазон: {selected_range_str}. Выберите дату вылета:",
+        callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_date_",
+        min_allowed_date_for_comparison=min_date
+    )
+    return config.SELECTING_FLEX_DEPARTURE_DATE
 
 def create_conversation_handler() -> ConversationHandler:
     price_option_pattern = f"^({config.CALLBACK_PRICE_CUSTOM}|{config.CALLBACK_PRICE_LOWEST}|{config.CALLBACK_PRICE_ALL})$"
