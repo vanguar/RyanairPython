@@ -268,13 +268,3 @@ def get_search_other_airports_keyboard(country_name: str): #
         ]
     ]
     return InlineKeyboardMarkup(keyboard) #
-
-# НОВАЯ ФУНКЦИЯ
-def get_price_options_keyboard() -> InlineKeyboardMarkup:
-    """Возвращает клавиатуру с выбором опции цены."""
-    keyboard = [
-        [InlineKeyboardButton("✏️ Задать свою цену", callback_data=CALLBACK_PRICE_CUSTOM)],
-        [InlineKeyboardButton("📉 Самая низкая", callback_data=CALLBACK_PRICE_LOWEST)],
-        [InlineKeyboardButton("📊 Показать всё", callback_data=CALLBACK_PRICE_ALL)],
-    ]
-    return InlineKeyboardMarkup(keyboard)
