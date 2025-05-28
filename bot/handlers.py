@@ -406,32 +406,53 @@ async def start_flex_anywhere_callback(update: Update, context: ContextTypes.DEF
 
 # --- ОБРАБОТЧИКИ "НАЗАД" ---
 # Стандартный поиск - даты вылета
+# В файле /app/bot/handlers.py
 async def back_std_dep_year_to_city_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    context.user_data.pop('departure_year', None) # Год еще не был выбран окончательно, но если был клик, лучше очистить
-    # Очищаем также последующие возможные данные
+    context.user_data.pop('departure_year', None) 
     context.user_data.pop('departure_month', None)
     context.user_data.pop('departure_date_range_str', None)
     context.user_data.pop('departure_date', None)
 
-
     country = context.user_data.get('departure_country')
     if not country:
-        logger.error("back_std_dep_year_to_city_handler: departure_country не найден.")
-        await query.edit_message_text("Ошибка: страна вылета не найдена. /start")
+        logger.error("back_std_dep_year_to_city_handler: departure_country не найден в user_data.")
+        if query.message: # Проверяем, есть ли query.message
+            await query.edit_message_text("Ошибка: страна вылета не найдена. Пожалуйста, начните поиск заново: /start")
+        elif update.effective_chat: # Используем update.effective_chat для отправки нового сообщения
+             await context.bot.send_message(chat_id=update.effective_chat.id, text="Ошибка: страна вылета не найдена. Пожалуйста, начните поиск заново: /start")
+        else:
+             logger.error("back_std_dep_year_to_city_handler: не удалось получить chat_id для сообщения об ошибке.")
         return ConversationHandler.END
     try:
-        await query.delete_message()
-    except Exception:
-        try: await query.edit_message_text("Возврат к выбору города вылета...")
-        except Exception: pass
+        if query.message: # Убедимся, что query.message существует
+            await query.delete_message()
+    except Exception as e:
+        logger.warning(f"Не удалось удалить сообщение при возврате к выбору города: {e}. Попытка редактирования.")
+        try:
+            if query.message: # Убедимся, что query.message существует
+                await query.edit_message_text("Возврат к выбору города вылета...")
+        except Exception:
+            pass
 
-    await context.bot.send_message(
-        chat_id=query.effective_chat.id,
-        text="Выберите город вылета:",
-        reply_markup=keyboards.get_city_reply_keyboard(country)
-    )
+    # Определяем chat_id для отправки сообщения
+    chat_id_to_send = None
+    if query.message:
+        chat_id_to_send = query.message.chat_id
+    elif update.effective_chat: # Запасной вариант, если query.message отсутствует
+        chat_id_to_send = update.effective_chat.id
+    
+    if chat_id_to_send:
+        await context.bot.send_message(
+            chat_id=chat_id_to_send, # ИСПОЛЬЗУЕМ ИСПРАВЛЕННЫЙ chat_id
+            text="Выберите город вылета:",
+            reply_markup=keyboards.get_city_reply_keyboard(country)
+        )
+    else:
+        logger.error("back_std_dep_year_to_city_handler: не удалось определить chat_id для отправки сообщения.")
+        return ConversationHandler.END
+
     return config.S_SELECTING_DEPARTURE_CITY
 
 async def back_std_dep_month_to_year_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -508,7 +529,7 @@ async def back_std_ret_year_to_arr_city_handler(update: Update, context: Context
         except Exception: pass
 
     await context.bot.send_message(
-        chat_id=query.effective_chat.id,
+        chat_id=query.message.chat_id,
         text="Выберите город прилёта:",
         reply_markup=keyboards.get_city_reply_keyboard(country)
     )
@@ -587,7 +608,7 @@ async def back_price_to_std_arr_city_oneway_handler(update: Update, context: Con
         try: await query.delete_message()
         except Exception: pass
         await context.bot.send_message(
-            chat_id=query.effective_chat.id,
+            chat_id=query.message.chat_id,
             text="Выберите страну прилёта:",
             reply_markup=keyboards.get_country_reply_keyboard()
         )
@@ -597,7 +618,7 @@ async def back_price_to_std_arr_city_oneway_handler(update: Update, context: Con
     except Exception: pass
 
     await context.bot.send_message(
-        chat_id=query.effective_chat.id,
+        chat_id=query.message.chat_id,
         text="Выберите город прилёта:",
         reply_markup=keyboards.get_city_reply_keyboard(arrival_country)
     )
@@ -664,7 +685,7 @@ async def back_price_to_flex_flight_type_handler(update: Update, context: Contex
     except Exception: pass
 
     await context.bot.send_message(
-        chat_id=query.effective_chat.id,
+        chat_id=query.message.chat_id,
         text=config.MSG_FLIGHT_TYPE_PROMPT,
         reply_markup=keyboards.get_flight_type_reply_keyboard()
     )
@@ -731,7 +752,7 @@ async def back_flex_ask_arr_to_dep_city_handler(update: Update, context: Context
         except Exception: pass
 
     await context.bot.send_message(
-        chat_id=query.effective_chat.id,
+        chat_id=query.message.chat_id,
         text="Выберите город вылета:",
         reply_markup=keyboards.get_city_reply_keyboard(country)
     )
@@ -784,7 +805,7 @@ async def back_flex_ask_dates_to_location_handler(update: Update, context: Conte
         try: await query.delete_message() # Удаляем сообщение с вопросом о датах
         except Exception: pass
         await context.bot.send_message(
-            chat_id=query.effective_chat.id,
+            chat_id=query.message.chat_id,
             text="Выберите город прилёта:",
             reply_markup=keyboards.get_city_reply_keyboard(arrival_country)
         )
