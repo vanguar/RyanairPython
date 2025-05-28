@@ -154,3 +154,36 @@ def filter_cheapest_flights(all_flights_data: Dict[str, List[Any]]) -> Dict[str,
                 cheapest_flights_result[date_str].append(flight)
                 
     return dict(cheapest_flights_result)
+
+def get_flight_price(flight: Any) -> Decimal:
+    """
+    Извлекает общую цену из объекта рейса для сравнения.
+    Возвращает Decimal('inf'), если цена не может быть определена.
+    """
+    price_str = None
+    if hasattr(flight, 'price') and getattr(flight, 'price') is not None: # В одну сторону
+        price_str = getattr(flight, 'price')
+    elif hasattr(flight, 'outbound') and getattr(flight, 'outbound') and \
+         hasattr(flight.outbound, 'price') and getattr(flight.outbound, 'price') is not None: # Туда-обратно
+        
+        outbound_price_str = getattr(flight.outbound, 'price')
+        try:
+            current_total_price = Decimal(str(outbound_price_str))
+            if hasattr(flight, 'inbound') and getattr(flight, 'inbound') and \
+               hasattr(flight.inbound, 'price') and getattr(flight.inbound, 'price') is not None:
+                inbound_price_str = getattr(flight.inbound, 'price')
+                current_total_price += Decimal(str(inbound_price_str))
+            return current_total_price
+        except InvalidOperation:
+            logger.warning(f"Не удалось преобразовать цену рейса в Decimal: outbound='{outbound_price_str}', inbound='{getattr(flight.inbound, 'price', None)}'")
+            return Decimal('inf')
+    
+    if price_str is not None:
+        try:
+            return Decimal(str(price_str))
+        except InvalidOperation:
+            logger.warning(f"Не удалось преобразовать цену рейса в Decimal: '{price_str}'")
+            return Decimal('inf')
+            
+    logger.warning(f"Не удалось извлечь цену из объекта рейса: {flight}")
+    return Decimal('inf')

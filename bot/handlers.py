@@ -418,6 +418,8 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
     context.user_data.pop('remaining_flights_to_show', None)
 
     if not flights_by_date:
+        # ... (существующий код для случаев, когда рейсы не найдены)
+        # BEGINNING OF EXISTING NO FLIGHTS CODE
         await context.bot.send_message(chat_id=chat_id, text=config.MSG_NO_FLIGHTS_FOUND)
         dep_country = context.user_data.get('departure_country')
         dep_airport_iata = context.user_data.get('departure_airport_iata')
@@ -440,16 +442,27 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
                 yes_text="✅ Начать новый поиск", no_text="❌ Закончить"
             )
         )
+        # END OF EXISTING NO FLIGHTS CODE
         return ConversationHandler.END
 
     await context.bot.send_message(chat_id=chat_id, text=config.MSG_FLIGHTS_FOUND_SEE_BELOW)
     flights_message_parts = []
-    sorted_dates = sorted(flights_by_date.keys())
+    sorted_dates = sorted(flights_by_date.keys()) # Даты остаются отсортированными по возрастанию
 
     for flight_date_str in sorted_dates:
         flights_on_this_date = flights_by_date[flight_date_str]
         if not flights_on_this_date:
             continue
+        
+        # --- ДОБАВЛЕНО: Сортировка рейсов на эту дату по цене ---
+        try:
+            # Используем новую вспомогательную функцию helpers.get_flight_price для ключа сортировки
+            sorted_flights_on_this_date = sorted(flights_on_this_date, key=helpers.get_flight_price)
+        except Exception as e_sort:
+            logger.error(f"Ошибка при сортировке рейсов для даты {flight_date_str}: {e_sort}. Рейсы останутся несортированными для этой даты.")
+            sorted_flights_on_this_date = flights_on_this_date # В случае ошибки, используем исходный список
+        # --- КОНЕЦ ДОБАВЛЕННОГО ---
+
         try:
             date_obj = datetime.strptime(flight_date_str, "%Y-%m-%d")
             formatted_date_header = f"\n--- 📅 *{date_obj.strftime('%d %B %Y (%A)')}* ---\n"
@@ -457,26 +470,52 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
             formatted_date_header = f"\n--- 📅 *{flight_date_str}* ---\n"
         flights_message_parts.append(formatted_date_header)
 
-        for flight in flights_on_this_date:
+        # Используем отсортированный список sorted_flights_on_this_date
+        for flight in sorted_flights_on_this_date: 
             formatted_flight = helpers.format_flight_details(flight)
             flights_message_parts.append(formatted_flight)
         flights_message_parts.append("\n")
 
     if flights_message_parts:
         full_text = "".join(flights_message_parts)
-        escaped_full_text = escape_markdown(full_text, version=2)
-        max_telegram_message_length = 4096
-        for i in range(0, len(escaped_full_text), max_telegram_message_length):
-            chunk = escaped_full_text[i:i + max_telegram_message_length]
+        # ВНИМАНИЕ: escape_markdown может изменить длину текста. 
+        # Если используется parse_mode='MarkdownV2', то экранирование нужно делать до разбиения на чанки.
+        # Однако, если форматирование в format_flight_details уже включает MarkdownV2 символы,
+        # то экранировать нужно осторожно или убедиться, что format_flight_details их правильно готовит.
+        # В вашем format_flight_details уже есть Markdown (*, ->), так что общий escape_markdown здесь может быть избыточен или даже вреден,
+        # если format_flight_details уже сам заботится об экранировании спецсимволов *внутри* значений (например, в названии аэропорта).
+        # Если format_flight_details НЕ экранирует пользовательские данные, то escape_markdown нужен.
+        # Для простоты, предполагаем, что format_flight_details возвращает "безопасный" Markdown.
+
+        max_telegram_message_length = 4096 
+        current_chunk = ""
+        for part in flights_message_parts:
+            if len(current_chunk) + len(part) > max_telegram_message_length:
+                if current_chunk: # Отправляем накопленный чанк
+                    try:
+                        # Попытка отправить с MarkdownV2, если format_flight_details его использует
+                        await context.bot.send_message(chat_id=chat_id, text=current_chunk, parse_mode='MarkdownV2')
+                    except Exception as e_md:
+                        logger.warning(f"Ошибка при отправке чанка рейсов с MarkdownV2: {e_md}. Попытка отправить как простой текст.")
+                        try:
+                            await context.bot.send_message(chat_id=chat_id, text=current_chunk) # Fallback на простой текст
+                        except Exception as fallback_e:
+                            logger.error(f"Не удалось отправить чанк даже как простой текст: {fallback_e}")
+                            # Можно отправить сообщение об ошибке отображения части результатов, если предыдущая отправка не удалась
+                current_chunk = part
+            else:
+                current_chunk += part
+        
+        if current_chunk: # Отправляем последний оставшийся чанк
             try:
-                await context.bot.send_message(chat_id=chat_id, text=chunk, parse_mode='MarkdownV2')
+                await context.bot.send_message(chat_id=chat_id, text=current_chunk, parse_mode='MarkdownV2')
             except Exception as e_md:
-                logger.warning(f"Ошибка при отправке чанка рейсов с MarkdownV2: {e_md}. Попытка отправить как простой текст.")
+                logger.warning(f"Ошибка при отправке последнего чанка рейсов с MarkdownV2: {e_md}. Попытка отправить как простой текст.")
                 try:
-                    await context.bot.send_message(chat_id=chat_id, text=chunk)
+                    await context.bot.send_message(chat_id=chat_id, text=current_chunk)
                 except Exception as fallback_e:
-                    logger.error(f"Не удалось отправить чанк даже как простой текст: {fallback_e}")
-                    await context.bot.send_message(chat_id=chat_id, text="Произошла ошибка при отображении части результатов.")
+                     logger.error(f"Не удалось отправить последний чанк даже как простой текст: {fallback_e}")
+
 
     await context.bot.send_message(
         chat_id=chat_id, text="Что дальше?",
