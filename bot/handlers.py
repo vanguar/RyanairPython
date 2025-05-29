@@ -1221,7 +1221,7 @@ async def standard_arrival_country(update: Update, context: ContextTypes.DEFAULT
             return config.S_SELECTING_ARRIVAL_COUNTRY
 
     context.user_data['arrival_country'] = country
-    await update.message.reply_text("Выберите город прилёта:", reply_markup=keyboards.get_city_reply_keyboard(country))
+    await update.message.reply_text("🏙️ Выберите город прилёта:", reply_markup=keyboards.get_city_reply_keyboard(country))
     return config.S_SELECTING_ARRIVAL_CITY
 
 async def standard_arrival_city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1442,7 +1442,7 @@ async def flex_ask_departure_airport(update: Update, context: ContextTypes.DEFAU
         if query.message:
             try: await query.edit_message_text(text="Хорошо, выберите страну вылета:", reply_markup=None)
             except Exception: await context.bot.send_message(update.effective_chat.id, "Хорошо, выберите страну вылета:")
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Выберите страну вылета:", reply_markup=keyboards.get_country_reply_keyboard())
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="🌍 Выберите страну вылета:", reply_markup=keyboards.get_country_reply_keyboard())
         return config.SELECTING_FLEX_DEPARTURE_COUNTRY
     else: # ask_dep_no
         logger.info("Гибкий поиск: пользователь попытался пропустить аэропорт вылета – сценарий остановлен.")
@@ -1458,7 +1458,7 @@ async def flex_ask_departure_airport(update: Update, context: ContextTypes.DEFAU
 async def flex_departure_country(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     country = update.message.text
     if country not in config.COUNTRIES_DATA:
-        await update.message.reply_text("Страна не найдена! Пожалуйста, выберите из списка.", reply_markup=keyboards.get_country_reply_keyboard())
+        await update.message.reply_text("🤷 Страна не найдена! Пожалуйста, выберите из списка.", reply_markup=keyboards.get_country_reply_keyboard())
         return config.SELECTING_FLEX_DEPARTURE_COUNTRY
     context.user_data['departure_country'] = country
     await update.message.reply_text("🏙️ Выберите город вылета:", reply_markup=keyboards.get_city_reply_keyboard(country))
@@ -1468,16 +1468,16 @@ async def flex_departure_city(update: Update, context: ContextTypes.DEFAULT_TYPE
     city = update.message.text
     country = context.user_data.get('departure_country')
     if not country:
-        await update.message.reply_text("Ошибка: страна вылета не определена. /start")
+        await update.message.reply_text("❗Ошибка: страна вылета не определена. /start")
         return ConversationHandler.END
     iata_code = helpers.get_airport_iata(country, city)
     if not iata_code:
-        await update.message.reply_text("Город не найден! Выберите из списка.", reply_markup=keyboards.get_city_reply_keyboard(country))
+        await update.message.reply_text("🤷 Город не найден! Выберите из списка.", reply_markup=keyboards.get_city_reply_keyboard(country))
         return config.SELECTING_FLEX_DEPARTURE_CITY
 
     context.user_data['departure_airport_iata'] = iata_code
     context.user_data['departure_city_name'] = city
-    await update.message.reply_text(f"Город вылета: {city}.", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text(f"🏙️ Город вылета: {city}.", reply_markup=ReplyKeyboardRemove())
 
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
@@ -1497,13 +1497,13 @@ async def flex_ask_arrival_airport(update: Update, context: ContextTypes.DEFAULT
 
     if query.data == config.CALLBACK_PREFIX_FLEX + "ask_arr_yes":
         if query.message:
-            try: await query.edit_message_text(text="Аэропорт прилёта: ДА")
+            try: await query.edit_message_text(text="👍 Аэропорт прилёта: ДА")
             except Exception: pass
         await context.bot.send_message(chat_id=update.effective_chat.id, text="🌍 Выберите страну прилёта:", reply_markup=keyboards.get_country_reply_keyboard())
         return config.SELECTING_FLEX_ARRIVAL_COUNTRY
     else: # ask_arr_no
         if query.message:
-            try: await query.edit_message_text(text="Аэропорт прилёта: НЕТ (любой доступный).")
+            try: await query.edit_message_text(text="✨ Аэропорт прилёта: НЕТ (любой доступный).")
             except Exception: pass
         context.user_data['arrival_airport_iata'] = None
 
@@ -1519,39 +1519,39 @@ async def flex_ask_arrival_airport(update: Update, context: ContextTypes.DEFAULT
 async def flex_arrival_country(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     country = update.message.text
     if country not in config.COUNTRIES_DATA:
-        await update.message.reply_text("Страна не найдена! Выберите из списка.", reply_markup=keyboards.get_country_reply_keyboard())
+        await update.message.reply_text("🤷 Страна не найдена! Выберите из списка.", reply_markup=keyboards.get_country_reply_keyboard())
         return config.SELECTING_FLEX_ARRIVAL_COUNTRY
     context.user_data['arrival_country'] = country
-    await update.message.reply_text("Выберите город прилёта:", reply_markup=keyboards.get_city_reply_keyboard(country))
+    await update.message.reply_text("🏙️ Выберите город прилёта:", reply_markup=keyboards.get_city_reply_keyboard(country))
     return config.SELECTING_FLEX_ARRIVAL_CITY
 
 async def flex_arrival_city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not update.message or not update.message.text:
         logger.warning("flex_arrival_city: пустое сообщение")
-        await update.message.reply_text("Выберите город прилёта. Для начала, выберите страну:", reply_markup=keyboards.get_country_reply_keyboard())
+        await update.message.reply_text("🏙️ Выберите город прилёта. Для начала, выберите страну:", reply_markup=keyboards.get_country_reply_keyboard())
         return config.SELECTING_FLEX_ARRIVAL_COUNTRY # Возврат к выбору страны
 
     city = update.message.text
     country = context.user_data.get('arrival_country')
     if not country:
-        await update.message.reply_text("Ошибка: страна прилёта не определена. /start", reply_markup=ReplyKeyboardRemove())
+        await update.message.reply_text("🤷 Ошибка: страна прилёта не определена. /start", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     iata_code = helpers.get_airport_iata(country, city)
     if not iata_code:
         await update.message.reply_text(
-            f"Город '{escape_markdown(city, version=2)}' не найден. Выберите другую страну прилёта:",
+            f"Город '{escape_markdown(city, version=2)}' 🤷 не найден. Выберите другую страну прилёта:",
             reply_markup=keyboards.get_country_reply_keyboard(), parse_mode='MarkdownV2'
         )
         return config.SELECTING_FLEX_ARRIVAL_COUNTRY
     departure_iata = context.user_data.get('departure_airport_iata')
     if departure_iata and iata_code == departure_iata:
-        await update.message.reply_text("Аэропорт прилёта не совпадает с вылетом. Выберите другую страну:", reply_markup=keyboards.get_country_reply_keyboard())
+        await update.message.reply_text("🤷 Аэропорт прилёта не совпадает с вылетом. Выберите другую страну:", reply_markup=keyboards.get_country_reply_keyboard())
         return config.SELECTING_FLEX_ARRIVAL_COUNTRY
 
     context.user_data['arrival_airport_iata'] = iata_code
     context.user_data['arrival_city_name'] = city
-    await update.message.reply_text(f"Город прилёта (гибкий поиск): {city}.", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text(f"🏙️ Город прилёта (гибкий поиск): {city}.", reply_markup=ReplyKeyboardRemove())
 
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
@@ -1570,21 +1570,21 @@ async def flex_ask_dates(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if query.data == config.CALLBACK_PREFIX_FLEX + "ask_dates_yes":
         if query.message:
-            try: await query.edit_message_text(text="Даты: ДА, указать конкретные.")
+            try: await query.edit_message_text(text="🗓️ Даты: ДА, указать конкретные.")
             except Exception: pass
         # update (query) содержит message для edit_message_text в ask_year
-        await ask_year(query, context, "Выберите год вылета:",
+        await ask_year(query, context, "🗓️ Выберите год вылета:",
                        callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_year_",
                        keyboard_back_callback=config.CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES)
         return config.SELECTING_FLEX_DEPARTURE_YEAR
     elif query.data == config.CALLBACK_NO_SPECIFIC_DATES:
         if query.message:
-            try: await query.edit_message_text(text="Даты: НЕТ, искать на ближайший год.")
+            try: await query.edit_message_text(text="🗓️ Даты: НЕТ, искать на ближайший год.")
             except Exception: pass
         context.user_data['departure_date'] = None
         context.user_data['return_date'] = None
         if not context.user_data.get('departure_airport_iata'):
-            msg_text = ("Ошибка: Для поиска без дат необходимо указать аэропорт вылета. /start")
+            msg_text = ("❗Ошибка: Для поиска без дат необходимо указать аэропорт вылета. /start")
             if query.message:
                 try: await query.edit_message_text(text=msg_text, reply_markup=None)
                 except Exception: await context.bot.send_message(update.effective_chat.id, msg_text)
@@ -1605,7 +1605,7 @@ async def flex_departure_year_selected(update: Update, context: ContextTypes.DEF
         selected_year = int(query.data.replace(config.CALLBACK_PREFIX_FLEX + "dep_year_", ""))
     except ValueError:
         logger.warning("flex_departure_year_selected: ValueError parsing year.")
-        await query.edit_message_text("Ошибка формата года. Пожалуйста, начните заново /start.")
+        await query.edit_message_text("❗Ошибка формата года. Пожалуйста, начните заново /start.")
         return ConversationHandler.END
 
     context.user_data['departure_year'] = selected_year
@@ -1625,23 +1625,23 @@ async def flex_departure_month_selected(update: Update, context: ContextTypes.DE
         selected_month = int(query.data.replace(config.CALLBACK_PREFIX_FLEX + "dep_month_", ""))
     except ValueError:
         logger.warning("flex_departure_month_selected: ValueError parsing month.")
-        await query.edit_message_text("Ошибка формата месяца. Попробуйте снова.")
-        await ask_year(query, context, "Выберите год вылета:", # query для edit_message_text
+        await query.edit_message_text("❗Ошибка формата месяца. Попробуйте снова.")
+        await ask_year(query, context, "🗓️ Выберите год вылета:", # query для edit_message_text
                        callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_year_",
                        keyboard_back_callback=config.CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES)
         return config.SELECTING_FLEX_DEPARTURE_YEAR
 
     year = context.user_data.get('departure_year')
     if not year:
-        await query.edit_message_text("Год вылета не найден. Начните /start.")
+        await query.edit_message_text("🤷 Год вылета не найден. Начните /start.")
         return ConversationHandler.END
 
     now = datetime.now()
     if year == now.year and selected_month < now.month:
         month_name_rus = config.RUSSIAN_MONTHS.get(selected_month, str(selected_month))
-        await query.edit_message_text(text=f"Выбран прошедший месяц ({month_name_rus} {year}). Пожалуйста, выберите корректный месяц.")
+        await query.edit_message_text(text=f"🗓️ Выбран прошедший месяц ({month_name_rus} {year}). Пожалуйста, выберите корректный месяц.")
         await ask_month(update, context, year_for_months=year,
-                        message_text=f"Год вылета: {year}. Выберите месяц:",
+                        message_text=f"Год вылета: {year}. 🗓️ Выберите месяц:",
                         callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_month_",
                         keyboard_back_callback=config.CB_BACK_FLEX_DEP_MONTH_TO_YEAR)
         return config.SELECTING_FLEX_DEPARTURE_MONTH
@@ -1664,11 +1664,11 @@ async def flex_departure_date_range_selected(update: Update, context: ContextTyp
         start_day, end_day = map(int, selected_range_str.split('-'))
     except ValueError:
         logger.warning("flex_departure_date_range_selected: ValueError parsing range.")
-        await query.edit_message_text("Некорректный диапазон. Выберите снова.")
+        await query.edit_message_text("🚫 Некорректный диапазон. Выберите снова.")
         year = context.user_data.get('departure_year')
         if year:
              await ask_month(update, context, year_for_months=year,
-                             message_text=f"Год вылета: {year}. Выберите месяц:",
+                             message_text=f"Год вылета: {year}. 🗓️ Выберите месяц:",
                              callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_month_",
                              keyboard_back_callback=config.CB_BACK_FLEX_DEP_MONTH_TO_YEAR)
              return config.SELECTING_FLEX_DEPARTURE_MONTH
@@ -1681,7 +1681,7 @@ async def flex_departure_date_range_selected(update: Update, context: ContextTyp
 
     month_name_rus = config.RUSSIAN_MONTHS.get(month, str(month))
     await ask_specific_date(update, context, year, month, start_day, end_day, # update содержит query
-                            f"Диапазон: {start_day}-{end_day} {month_name_rus}. Выберите дату вылета:",
+                            f"Диапазон: {start_day}-{end_day} {month_name_rus}. 🗓️ Выберите дату вылета:",
                             callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_date_",
                             min_allowed_date_for_comparison=min_date_for_dep,
                             keyboard_back_callback=config.CB_BACK_FLEX_DEP_DATE_TO_RANGE)
@@ -1703,26 +1703,26 @@ async def flex_departure_date_selected(update: Update, context: ContextTypes.DEF
             try:
                 start_day, end_day = map(int, range_str.split('-'))
                 month_name_rus = config.RUSSIAN_MONTHS.get(month, str(month))
-                await query.edit_message_text("Некорректная дата или дата в прошлом. Попробуйте снова.")
+                await query.edit_message_text("🚫 Некорректная дата или дата в прошлом. Попробуйте снова.")
                 await ask_specific_date(update, context, year, month, start_day, end_day,
-                                        f"Диапазон: {start_day}-{end_day} {month_name_rus}. Выберите дату вылета:",
+                                        f"Диапазон: {start_day}-{end_day} {month_name_rus}. 🗓️ Выберите дату вылета:",
                                         callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_date_",
                                         min_allowed_date_for_comparison=min_allowed_date,
                                         keyboard_back_callback=config.CB_BACK_FLEX_DEP_DATE_TO_RANGE)
                 return config.SELECTING_FLEX_DEPARTURE_DATE
             except ValueError: pass
-        await query.edit_message_text("Ошибка даты. Начните /start.")
+        await query.edit_message_text("🚫 Ошибка даты. Начните /start.")
         return ConversationHandler.END
 
     context.user_data['departure_date'] = selected_date_str
     if query.message:
-      try: await query.edit_message_text(text=f"Дата вылета: {date_obj.strftime('%d-%m-%Y')}")
+      try: await query.edit_message_text(text=f"🗓️ Дата вылета: {date_obj.strftime('%d-%m-%Y')}")
       except Exception as e: logger.warning(f"flex_departure_date_selected: edit_message_text failed: {e}")
 
     if context.user_data.get('flight_type_one_way', True):
         return await launch_flight_search(update, context)
     else:
-        await ask_year(query, context, "Выберите год обратного вылета:", # query для edit_message_text
+        await ask_year(query, context, "🗓️ Выберите год обратного вылета:", # query для edit_message_text
                        callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_year_",
                        keyboard_back_callback=config.CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE)
         return config.SELECTING_FLEX_RETURN_YEAR
@@ -1736,17 +1736,17 @@ async def flex_return_year_selected(update: Update, context: ContextTypes.DEFAUL
         selected_return_year = int(query.data.replace(config.CALLBACK_PREFIX_FLEX + "ret_year_", ""))
     except ValueError:
         logger.error("flex_return_year_selected: ValueError parsing year")
-        await query.edit_message_text("Ошибка формата года возврата. /start")
+        await query.edit_message_text("🚫 Ошибка формата года возврата. /start")
         return ConversationHandler.END
 
     departure_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
     if not departure_date_obj:
-        await query.edit_message_text("Ошибка: дата вылета не найдена. Начните /start.")
+        await query.edit_message_text("🚫 Ошибка: дата вылета не найдена. Начните /start.")
         return ConversationHandler.END
 
     if selected_return_year < departure_date_obj.year:
-        await query.edit_message_text(text=f"Год возврата ({selected_return_year}) не может быть раньше года вылета ({departure_date_obj.year}).")
-        await ask_year(query, context, "Выберите корректный год обратного вылета:",
+        await query.edit_message_text(text=f"🗓️ Год возврата ({selected_return_year}) не может быть раньше года вылета ({departure_date_obj.year}).")
+        await ask_year(query, context, "🗓️ Выберите корректный год обратного вылета:",
                        callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_year_",
                        keyboard_back_callback=config.CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE)
         return config.SELECTING_FLEX_RETURN_YEAR
@@ -1759,7 +1759,7 @@ async def flex_return_year_selected(update: Update, context: ContextTypes.DEFAUL
 
     await ask_month(update, context, # update содержит query
                   year_for_months=selected_return_year,
-                  message_text=f"Год обратного вылета: {selected_return_year}. Выберите месяц:",
+                  message_text=f"Год обратного вылета: {selected_return_year}. 🗓️ Выберите месяц:",
                   callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_month_",
                   departure_year_for_comparison=departure_date_obj.year,
                   departure_month_for_comparison=min_ret_month_for_comp,
@@ -1775,8 +1775,8 @@ async def flex_return_month_selected(update: Update, context: ContextTypes.DEFAU
         selected_return_month = int(query.data.replace(config.CALLBACK_PREFIX_FLEX + "ret_month_", ""))
     except ValueError:
         logger.warning("flex_return_month_selected: ValueError parsing month.")
-        await query.edit_message_text("Ошибка формата месяца.")
-        await ask_year(query, context, "Выберите год обратного вылета:",
+        await query.edit_message_text("🚫 Ошибка формата месяца.")
+        await ask_year(query, context, "🗓️ Выберите год обратного вылета:",
                        callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_year_",
                        keyboard_back_callback=config.CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE)
         return config.SELECTING_FLEX_RETURN_YEAR
@@ -1785,14 +1785,14 @@ async def flex_return_month_selected(update: Update, context: ContextTypes.DEFAU
     departure_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
 
     if not return_year or not departure_date_obj:
-        await query.edit_message_text("Ошибка данных о датах. /start")
+        await query.edit_message_text("🚫 Ошибка данных о датах. /start")
         return ConversationHandler.END
 
     if return_year == departure_date_obj.year and selected_return_month < departure_date_obj.month:
-        await query.edit_message_text("Месяц возврата не может быть раньше месяца вылета в том же году.")
+        await query.edit_message_text("🗓️ Месяц возврата не может быть раньше месяца вылета в том же году.")
         min_ret_month_for_comp = departure_date_obj.month # Гарантированно тот же год
         await ask_month(update, context, return_year,
-                        f"Год обратного вылета: {return_year}. Выберите месяц:",
+                        f"🗓️ Год обратного вылета: {return_year}. Выберите месяц:",
                         config.CALLBACK_PREFIX_FLEX + "ret_month_",
                         departure_date_obj.year, min_ret_month_for_comp,
                         keyboard_back_callback=config.CB_BACK_FLEX_RET_MONTH_TO_YEAR)
@@ -1816,7 +1816,7 @@ async def flex_return_date_range_selected(update: Update, context: ContextTypes.
         start_day, end_day = map(int, selected_range_str.split('-'))
     except ValueError:
         logger.warning("flex_return_date_range_selected: ValueError parsing range.")
-        await query.edit_message_text("Некорректный диапазон.")
+        await query.edit_message_text("🚫 Некорректный диапазон.")
         year = context.user_data.get('return_year')
         dep_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
         min_ret_month_for_comp = 1
@@ -1824,7 +1824,7 @@ async def flex_return_date_range_selected(update: Update, context: ContextTypes.
             min_ret_month_for_comp = dep_date_obj.month
 
         if year and dep_date_obj:
-            await ask_month(update, context, year, f"Год обратного вылета: {year}. Выберите месяц:",
+            await ask_month(update, context, year, f"🗓️ Год обратного вылета: {year}. Выберите месяц:",
                             config.CALLBACK_PREFIX_FLEX + "ret_month_",
                             dep_date_obj.year, min_ret_month_for_comp,
                             keyboard_back_callback=config.CB_BACK_FLEX_RET_MONTH_TO_YEAR)
@@ -1836,7 +1836,7 @@ async def flex_return_date_range_selected(update: Update, context: ContextTypes.
     month = context.user_data['return_month']
     departure_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
     if not departure_date_obj:
-        await query.edit_message_text("Ошибка: дата вылета не найдена. /start")
+        await query.edit_message_text("❗Ошибка: дата вылета не найдена. /start")
         return ConversationHandler.END
 
     # Минимальная дата для возврата - это дата вылета (включительно)
@@ -1850,11 +1850,11 @@ async def flex_return_date_range_selected(update: Update, context: ContextTypes.
     
     # Если после коррекции temp_start_day_for_buttons стал больше end_day, значит в этом диапазоне нет валидных дат.
     if temp_start_day_for_buttons > end_day:
-        await query.edit_message_text("В этом диапазоне нет доступных дат после учета даты вылета. Пожалуйста, выберите другой диапазон или месяц.")
+        await query.edit_message_text("🚫 В этом диапазоне нет доступных дат после учета даты вылета. Пожалуйста, выберите другой диапазон или месяц.")
         # Возврат к выбору месяца возврата
         min_ret_month_fallback = departure_date_obj.month if year == departure_date_obj.year else 1
         await ask_month(update, context, year,
-                        f"Год обратного вылета: {year}. Выберите месяц:",
+                        f"🗓️ Год обратного вылета: {year}. Выберите месяц:",
                         config.CALLBACK_PREFIX_FLEX + "ret_month_",
                         departure_date_obj.year, min_ret_month_fallback,
                         keyboard_back_callback=config.CB_BACK_FLEX_RET_MONTH_TO_YEAR)
@@ -1862,7 +1862,7 @@ async def flex_return_date_range_selected(update: Update, context: ContextTypes.
 
     month_name_rus = config.RUSSIAN_MONTHS.get(month, str(month))
     await ask_specific_date(update, context, year, month, temp_start_day_for_buttons, end_day, # update содержит query
-                            f"Диапазон: {start_day}-{end_day} {month_name_rus}. Выберите дату возврата:",
+                            f"Диапазон: {start_day}-{end_day} {month_name_rus}. 🗓️ Выберите дату возврата:",
                             callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_date_",
                             min_allowed_date_for_comparison=min_allowed_return_date,
                             keyboard_back_callback=config.CB_BACK_FLEX_RET_DATE_TO_RANGE)
@@ -1889,20 +1889,20 @@ async def flex_return_date_selected(update: Update, context: ContextTypes.DEFAUL
                      start_day_buttons = max(start_day_orig, departure_date_obj.day)
 
                  month_name_rus = config.RUSSIAN_MONTHS.get(month, str(month))
-                 await query.edit_message_text("Некорректная дата возврата (раньше даты вылета или в прошлом). Попробуйте снова.")
+                 await query.edit_message_text("🚫 Некорректная дата возврата (раньше даты вылета или в прошлом). Попробуйте снова.")
                  await ask_specific_date(update, context, year, month, start_day_buttons, end_day_orig,
-                                        f"Диапазон: {start_day_orig}-{end_day_orig} {month_name_rus}. Выберите дату возврата:",
+                                        f"📏 Диапазон: {start_day_orig}-{end_day_orig} {month_name_rus}. 🗓️ Выберите дату возврата:",
                                         callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_date_",
                                         min_allowed_date_for_comparison=departure_date_obj,
                                         keyboard_back_callback=config.CB_BACK_FLEX_RET_DATE_TO_RANGE)
                  return config.SELECTING_FLEX_RETURN_DATE
              except ValueError: pass
-        await query.edit_message_text("Ошибка даты возврата. Начните /start.")
+        await query.edit_message_text("❗Ошибка даты возврата. Начните /start.")
         return ConversationHandler.END
 
     context.user_data['return_date'] = selected_date_str
     if query.message:
-        try: await query.edit_message_text(text=f"Дата обратного вылета: {return_date_obj.strftime('%d-%m-%Y')}")
+        try: await query.edit_message_text(text=f"🗓️ Дата обратного вылета: {return_date_obj.strftime('%d-%m-%Y')}")
         except Exception as e: logger.warning(f"flex_return_date_selected: edit_message_text failed: {e}")
     return await launch_flight_search(update, context)
 
@@ -1942,7 +1942,7 @@ async def back_flex_dep_month_to_year_handler(update: Update, context: ContextTy
     context.user_data.pop('departure_date', None)
 
     await ask_year(query, context,
-                   "Выберите год вылета:",
+                   "🗓️ Выберите год вылета:",
                    callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_year_",
                    keyboard_back_callback=config.CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES)
     return config.SELECTING_FLEX_DEPARTURE_YEAR
@@ -1956,12 +1956,12 @@ async def back_flex_dep_range_to_month_handler(update: Update, context: ContextT
     context.user_data.pop('departure_date', None)
 
     if not year:
-        await query.edit_message_text("Ошибка: год вылета не найден. /start")
+        await query.edit_message_text("❗Ошибка: год вылета не найден. /start")
         return ConversationHandler.END
 
     await ask_month(query, context,
                   year_for_months=year,
-                  message_text=f"Год вылета: {year}. Выберите месяц:",
+                  message_text=f"Год вылета: {year}. 🗓️ Выберите месяц:",
                   callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_month_",
                   keyboard_back_callback=config.CB_BACK_FLEX_DEP_MONTH_TO_YEAR)
     return config.SELECTING_FLEX_DEPARTURE_MONTH
@@ -1975,7 +1975,7 @@ async def back_flex_dep_date_to_range_handler(update: Update, context: ContextTy
     context.user_data.pop('departure_date', None)
 
     if not year or not month:
-        await query.edit_message_text("Ошибка: год или месяц вылета не найдены. /start")
+        await query.edit_message_text("❗Ошибка: год или месяц вылета не найдены. /start")
         return ConversationHandler.END
 
     month_name = config.RUSSIAN_MONTHS.get(month, str(month))
@@ -2000,18 +2000,18 @@ async def back_flex_ret_year_to_dep_date_handler(update: Update, context: Contex
     range_str = context.user_data.get('departure_date_range_str')
 
     if not (year and month and range_str):
-        await query.edit_message_text("Не удалось восстановить предыдущий шаг выбора даты вылета. /start")
+        await query.edit_message_text("🛑 Не удалось восстановить предыдущий шаг выбора даты вылета. /start")
         return ConversationHandler.END
     try:
         start_day, end_day = map(int, range_str.split('-'))
     except ValueError:
-        await query.edit_message_text("Ошибка в данных диапазона дат вылета. /start")
+        await query.edit_message_text("❗Ошибка в данных диапазона дат вылета. /start")
         return ConversationHandler.END
 
     min_date_for_dep = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     month_name_rus = config.RUSSIAN_MONTHS.get(month, str(month))
     await ask_specific_date(query, context, year, month, start_day, end_day,
-                            f"Диапазон: {start_day}-{end_day} {month_name_rus}. Выберите дату вылета:",
+                            f"Диапазон: {start_day}-{end_day} {month_name_rus}. 🗓️ Выберите дату вылета:",
                             callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_date_",
                             min_allowed_date_for_comparison=min_date_for_dep,
                             keyboard_back_callback=config.CB_BACK_FLEX_DEP_DATE_TO_RANGE)
@@ -2028,11 +2028,11 @@ async def back_flex_ret_month_to_year_handler(update: Update, context: ContextTy
     # Возвращаемся к выбору года возврата
     dep_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
     if not dep_date_obj:
-        await query.edit_message_text("Ошибка: дата вылета не найдена. /start")
+        await query.edit_message_text("❗Ошибка: дата вылета не найдена. /start")
         return ConversationHandler.END
 
     await ask_year(query, context,
-                   "Выберите год обратного вылета:",
+                   "🗓️ Выберите год обратного вылета:",
                    callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_year_",
                    keyboard_back_callback=config.CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE)
     return config.SELECTING_FLEX_RETURN_YEAR
@@ -2046,12 +2046,12 @@ async def back_flex_ret_range_to_month_handler(update: Update, context: ContextT
     context.user_data.pop('return_date', None)
 
     if not year:
-        await query.edit_message_text("Ошибка: год возврата не найден. /start")
+        await query.edit_message_text("❗Ошибка: год возврата не найден. /start")
         return ConversationHandler.END
 
     departure_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
     if not departure_date_obj:
-        await query.edit_message_text("Ошибка: дата вылета не найдена. /start")
+        await query.edit_message_text("❗Ошибка: дата вылета не найдена. /start")
         return ConversationHandler.END
 
     min_ret_month_for_comp = 1
@@ -2060,7 +2060,7 @@ async def back_flex_ret_range_to_month_handler(update: Update, context: ContextT
 
     await ask_month(query, context,
                   year_for_months=year,
-                  message_text=f"Год обратного вылета: {year}. Выберите месяц:",
+                  message_text=f"Год обратного вылета: {year}. 🗓️ Выберите месяц:",
                   callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_month_",
                   departure_year_for_comparison=departure_date_obj.year,
                   departure_month_for_comparison=min_ret_month_for_comp,
@@ -2076,17 +2076,17 @@ async def back_flex_ret_date_to_range_handler(update: Update, context: ContextTy
     context.user_data.pop('return_date', None)
 
     if not year or not month:
-        await query.edit_message_text("Ошибка: год или месяц возврата не найдены. /start")
+        await query.edit_message_text("❗Ошибка: год или месяц возврата не найдены. /start")
         return ConversationHandler.END
 
     departure_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
     if not departure_date_obj: # Должна быть всегда, но на всякий случай
-        await query.edit_message_text("Ошибка: дата вылета не найдена. /start")
+        await query.edit_message_text("❗Ошибка: дата вылета не найдена. /start")
         return ConversationHandler.END
     
     month_name = config.RUSSIAN_MONTHS.get(month, str(month))
     await ask_date_range(query, context, year, month,
-                       f"Выбран: {month_name} {year}. Выберите диапазон дат для возврата:",
+                       f"Выбран: {month_name} {year}. 📏 Выберите диапазон дат для возврата:",
                        callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_range_",
                        keyboard_back_callback=config.CB_BACK_FLEX_RET_RANGE_TO_MONTH)
     return config.SELECTING_FLEX_RETURN_DATE_RANGE
@@ -2145,7 +2145,7 @@ async def handle_price_option_selected(update: Update, context: ContextTypes.DEF
             if query.message:
                 try: await query.edit_message_text(text=next_step_msg)
                 except Exception as e_edit:
-                    logger.warning(f"Не удалось изменить сообщение (lowest/all flex): {e_edit}. Отправляю новое.")
+                    logger.warning(f"🛑 Не удалось изменить сообщение (lowest/all flex): {e_edit}. Отправляю новое.")
                     await context.bot.send_message(update.effective_chat.id, next_step_msg)
 
             back_cb_for_ask_dep = config.CB_BACK_FLEX_ASK_DEP_TO_PRICE
@@ -2160,9 +2160,9 @@ async def handle_price_option_selected(update: Update, context: ContextTypes.DEF
             )
             return config.ASK_FLEX_DEPARTURE_AIRPORT
     else:
-        logger.warning(f"Неизвестный выбор опции цены: {choice}")
+        logger.warning(f"🛑 Неизвестный выбор опции цены: {choice}")
         if query.message:
-            try: await query.edit_message_text("Неизвестный выбор. Попробуйте снова.")
+            try: await query.edit_message_text("🛑 Неизвестный выбор. Попробуйте снова.")
             except Exception: pass
         return ConversationHandler.END
 
@@ -2221,12 +2221,12 @@ async def handle_search_other_airports_decision(update: Update, context: Context
         original_departure_iata = context.user_data.get('departure_airport_iata')
 
         if not departure_country or not original_departure_iata:
-            if query.message: await query.edit_message_text(text="Не удалось получить данные для поиска. Начните новый поиск.")
-            else: await context.bot.send_message(effective_chat_id, "Не удалось получить данные для поиска. Начните новый поиск.")
+            if query.message: await query.edit_message_text(text="🤷 Не удалось получить данные для поиска. Начните новый поиск.")
+            else: await context.bot.send_message(effective_chat_id, "🤷 Не удалось получить данные для поиска. Начните новый поиск.")
             return ConversationHandler.END
 
-        if query.message: await query.edit_message_text(text=f"Ищу рейсы из других аэропортов в {departure_country}...")
-        else: await context.bot.send_message(effective_chat_id, f"Ищу рейсы из других аэропортов в {departure_country}...")
+        if query.message: await query.edit_message_text(text=f"⏳ Ищу рейсы из других аэропортов в {departure_country}...")
+        else: await context.bot.send_message(effective_chat_id, f"⏳ Ищу рейсы из других аэропортов в {departure_country}...")
 
         context.user_data["_already_searched_alternatives"] = True
 
@@ -2236,7 +2236,7 @@ async def handle_search_other_airports_decision(update: Update, context: Context
         }
 
         if not alternative_airports:
-            await context.bot.send_message(chat_id=effective_chat_id, text=f"В стране {departure_country} нет других аэропортов для поиска.")
+            await context.bot.send_message(chat_id=effective_chat_id, text=f"🤷 В стране {departure_country} нет других аэропортов для поиска.")
             await context.bot.send_message(
                 chat_id=update.effective_chat.id, text="Что дальше?",
                 reply_markup=keyboards.get_yes_no_keyboard(
@@ -2253,8 +2253,8 @@ async def handle_search_other_airports_decision(update: Update, context: Context
         found_any = False
 
         for city, iata_code in alternative_airports.items():
-            logger.info(f"Поиск из альтернативного аэропорта: {city} ({iata_code})")
-            await context.bot.send_message(chat_id=effective_chat_id, text=f"Проверяю вылеты из {city} ({iata_code})...")
+            logger.info(f"⏳ Поиск из альтернативного аэропорта: {city} ({iata_code})")
+            await context.bot.send_message(chat_id=effective_chat_id, text=f"⏳ Проверяю вылеты из {city} ({iata_code})...")
 
             flights_from_alt_by_date = await flight_api.find_flights_with_fallback(
                 departure_airport_iata=iata_code,
@@ -2275,10 +2275,10 @@ async def handle_search_other_airports_decision(update: Update, context: Context
                     found_alternative_flights_data[f"{city} ({iata_code})"] = flights_from_alt_by_date
 
         if found_any:
-            alt_flights_final_message_parts = [f"Найдены рейсы из других аэропортов в {departure_country}:\n"]
+            alt_flights_final_message_parts = [f"✈️✨ Найдены рейсы из других аэропортов в {departure_country}:\n"]
             for source_airport_info, flights_by_sub_date_dict in found_alternative_flights_data.items():
                 if not flights_by_sub_date_dict: continue
-                alt_flights_final_message_parts.append(f"\n✈️ --- *Из аэропорта: {escape_markdown(source_airport_info, version=2)}* ---\n")
+                alt_flights_final_message_parts.append(f"\n✈️ --- *✈️ Из аэропорта: {escape_markdown(source_airport_info, version=2)}* ---\n")
                 for date_key, flights_on_this_date in sorted(flights_by_sub_date_dict.items()):
                     try:
                         date_obj_alt = datetime.strptime(date_key, "%Y-%m-%d")
@@ -2290,7 +2290,7 @@ async def handle_search_other_airports_decision(update: Update, context: Context
                     alt_flights_final_message_parts.append("\n")
 
             full_alt_message = "".join(alt_flights_final_message_parts)
-            if len(full_alt_message) > len(f"Найдены рейсы из других аэропортов в {departure_country}:\n") + 20:
+            if len(full_alt_message) > len(f"✈️✨ Найдены рейсы из других аэропортов в {departure_country}:\n") + 20:
                 escaped_full_alt_message = escape_markdown(full_alt_message, version=2)
                 for i_alt_msg in range(0, len(escaped_full_alt_message), 4096):
                     chunk_alt = escaped_full_alt_message[i_alt_msg:i_alt_msg + 4096]
@@ -2299,9 +2299,9 @@ async def handle_search_other_airports_decision(update: Update, context: Context
                     except Exception:
                         await context.bot.send_message(chat_id=update.effective_chat.id, text=chunk_alt)
             else:
-                 await context.bot.send_message(chat_id=effective_chat_id, text=f"Из других аэропортов в {departure_country} рейсов по вашим критериям не найдено.")
+                 await context.bot.send_message(chat_id=effective_chat_id, text=f"🤷 Из других аэропортов в {departure_country} рейсов по вашим критериям не найдено.")
         else:
-            await context.bot.send_message(chat_id=effective_chat_id, text=f"Из других аэропортов в {departure_country} рейсов по вашим критериям не найдено.")
+            await context.bot.send_message(chat_id=effective_chat_id, text=f"🤷 Из других аэропортов в {departure_country} рейсов по вашим критериям не найдено.")
 
         await context.bot.send_message(
             chat_id=update.effective_chat.id, text="Что дальше?",
@@ -2312,10 +2312,10 @@ async def handle_search_other_airports_decision(update: Update, context: Context
         return ConversationHandler.END
 
     elif query.data == config.CALLBACK_NO_OTHER_AIRPORTS:
-        if query.message: await query.edit_message_text(text="Понял. Поиск из других аэропортов отменен.")
-        else: await context.bot.send_message(effective_chat_id, "Понял. Поиск из других аэропортов отменен.")
+        if query.message: await query.edit_message_text(text="🛑 Понял. Поиск из других аэропортов отменен.")
+        else: await context.bot.send_message(effective_chat_id, "🛑 Понял. Поиск из других аэропортов отменен.")
         await context.bot.send_message(
-            chat_id=update.effective_chat.id, text="Что дальше?",
+            chat_id=update.effective_chat.id, text="🤷 Что дальше?",
             reply_markup=keyboards.get_yes_no_keyboard(
                 yes_callback="prompt_new_search_type", no_callback="end_search_session",
                 yes_text="✅ Начать новый поиск", no_text="❌ Закончить"
@@ -2351,11 +2351,11 @@ async def error_handler_conv(update: Union[Update, None], context: ContextTypes.
         try:
             await context.bot.send_message(
                 chat_id=chat_id_to_send_error,
-                text=config.MSG_ERROR_OCCURRED + " Пожалуйста, попробуйте начать заново с /start.",
+                text=config.MSG_ERROR_OCCURRED + " 🙏 Пожалуйста, попробуйте начать заново с /start.",
                 reply_markup=ReplyKeyboardRemove()
             )
         except Exception as e:
-            logger.error(f"Не удалось отправить сообщение об ошибке пользователю: {e}")
+            logger.error(f"🤷 Не удалось отправить сообщение об ошибке пользователю: {e}")
 
     if context.user_data: context.user_data.clear()
     return ConversationHandler.END
