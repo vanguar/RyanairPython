@@ -724,7 +724,7 @@ async def back_std_dep_date_to_range_handler(update: Update, context: ContextTyp
 
     month_name = config.RUSSIAN_MONTHS.get(month, str(month))
     await ask_date_range(query, context, year, month,
-                       f"Выбран: {month_name} {year}. Выберите диапазон дат:",
+                       f"Выбран: {month_name} {year}. 📏Выберите диапазон дат:",
                        callback_prefix=config.CALLBACK_PREFIX_STANDARD + "dep_range_",
                        keyboard_back_callback=config.CB_BACK_STD_DEP_RANGE_TO_MONTH)
     return config.S_SELECTING_DEPARTURE_DATE_RANGE
@@ -1055,7 +1055,7 @@ async def standard_flight_type(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("Пожалуйста, выберите 1 или 2.", reply_markup=keyboards.get_flight_type_reply_keyboard())
         return config.S_SELECTING_FLIGHT_TYPE
     context.user_data['flight_type_one_way'] = (user_input == '1')
-    await update.message.reply_text("Выберите страну вылета:", reply_markup=keyboards.get_country_reply_keyboard())
+    await update.message.reply_text("🌍 Выберите страну вылета:", reply_markup=keyboards.get_country_reply_keyboard())
     return config.S_SELECTING_DEPARTURE_COUNTRY
 
 async def standard_departure_country(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1064,7 +1064,7 @@ async def standard_departure_country(update: Update, context: ContextTypes.DEFAU
         await update.message.reply_text("Страна не найдена! Пожалуйста, выберите из списка.", reply_markup=keyboards.get_country_reply_keyboard())
         return config.S_SELECTING_DEPARTURE_COUNTRY
     context.user_data['departure_country'] = country
-    await update.message.reply_text("Выберите город вылета:", reply_markup=keyboards.get_city_reply_keyboard(country))
+    await update.message.reply_text("🏙️ Выберите город вылета:", reply_markup=keyboards.get_city_reply_keyboard(country))
     return config.S_SELECTING_DEPARTURE_CITY
 
 async def standard_departure_city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1082,7 +1082,7 @@ async def standard_departure_city(update: Update, context: ContextTypes.DEFAULT_
     context.user_data['departure_city_name'] = city
     await update.message.reply_text(f"Город вылета: {city}.", reply_markup=ReplyKeyboardRemove())
 
-    await ask_year(update, context, "Выберите год вылета:",
+    await ask_year(update, context, "📅 Выберите год вылета:",
                    callback_prefix=config.CALLBACK_PREFIX_STANDARD + "dep_year_",
                    keyboard_back_callback=config.CB_BACK_STD_DEP_YEAR_TO_CITY)
     return config.S_SELECTING_DEPARTURE_YEAR
@@ -1095,7 +1095,7 @@ async def standard_departure_year_selected(update: Update, context: ContextTypes
     context.user_data['departure_year'] = selected_year
     await ask_month(update, context,
                   year_for_months=selected_year,
-                  message_text=f"Год вылета: {selected_year}. Выберите месяц:",
+                  message_text=f"Год вылета: {selected_year}. 🗓️ Выберите месяц:",
                   callback_prefix=config.CALLBACK_PREFIX_STANDARD + "dep_month_",
                   keyboard_back_callback=config.CB_BACK_STD_DEP_MONTH_TO_YEAR)
     return config.S_SELECTING_DEPARTURE_MONTH
@@ -1134,7 +1134,7 @@ async def standard_departure_month_selected(update: Update, context: ContextType
     context.user_data['departure_month'] = selected_month
     month_name = config.RUSSIAN_MONTHS.get(selected_month, str(selected_month))
     await ask_date_range(update, context, year, selected_month,
-                       f"Выбран: {month_name} {year}. Выберите диапазон дат:",
+                       f"Выбран: {month_name} {year}. 📏 Выберите диапазон дат:",
                        callback_prefix=config.CALLBACK_PREFIX_STANDARD + "dep_range_",
                        keyboard_back_callback=config.CB_BACK_STD_DEP_RANGE_TO_MONTH)
     return config.S_SELECTING_DEPARTURE_DATE_RANGE
@@ -1162,7 +1162,7 @@ async def standard_departure_date_range_selected(update: Update, context: Contex
     month = context.user_data['departure_month']
     min_date_for_dep = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     await ask_specific_date(update, context, year, month, start_day, end_day,
-                            f"Диапазон: {selected_range_str}. Выберите дату:",
+                            f"Диапазон: {selected_range_str}. 🎯 Выберите дату:",
                             callback_prefix=config.CALLBACK_PREFIX_STANDARD + "dep_date_",
                             min_allowed_date_for_comparison=min_date_for_dep,
                             keyboard_back_callback=config.CB_BACK_STD_DEP_DATE_TO_RANGE)
@@ -1199,7 +1199,7 @@ async def standard_departure_date_selected(update: Update, context: ContextTypes
     await query.edit_message_text(text=f"Дата вылета: {date_obj.strftime('%d-%m-%Y')}")
     # Переход к выбору страны прилета. Кнопку "Назад" отсюда не добавляем, т.к. это ReplyKeyboard.
     # "Назад" от страны прилета должен вести сюда (S_SELECTING_DEPARTURE_DATE)
-    await context.bot.send_message(chat_id=update.effective_chat.id, text="Выберите страну прилёта:", reply_markup=keyboards.get_country_reply_keyboard())
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="🌍 Выберите страну прилёта:", reply_markup=keyboards.get_country_reply_keyboard())
     return config.S_SELECTING_ARRIVAL_COUNTRY
 
 async def standard_arrival_country(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1267,7 +1267,7 @@ async def standard_arrival_city(update: Update, context: ContextTypes.DEFAULT_TY
         return config.SELECTING_PRICE_OPTION
     else:
         # update - это MessageUpdate, ask_year его обработает для reply_text
-        await ask_year(update, context, "Выберите год обратного вылета:",
+        await ask_year(update, context, "📅 Выберите год обратного вылета:",
                        callback_prefix=config.CALLBACK_PREFIX_STANDARD + "ret_year_",
                        keyboard_back_callback=config.CB_BACK_STD_RET_YEAR_TO_ARR_CITY)
         return config.S_SELECTING_RETURN_YEAR
@@ -1461,7 +1461,7 @@ async def flex_departure_country(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("Страна не найдена! Пожалуйста, выберите из списка.", reply_markup=keyboards.get_country_reply_keyboard())
         return config.SELECTING_FLEX_DEPARTURE_COUNTRY
     context.user_data['departure_country'] = country
-    await update.message.reply_text("Выберите город вылета:", reply_markup=keyboards.get_city_reply_keyboard(country))
+    await update.message.reply_text("🏙️ Выберите город вылета:", reply_markup=keyboards.get_city_reply_keyboard(country))
     return config.SELECTING_FLEX_DEPARTURE_CITY
 
 async def flex_departure_city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1499,7 +1499,7 @@ async def flex_ask_arrival_airport(update: Update, context: ContextTypes.DEFAULT
         if query.message:
             try: await query.edit_message_text(text="Аэропорт прилёта: ДА")
             except Exception: pass
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Выберите страну прилёта:", reply_markup=keyboards.get_country_reply_keyboard())
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="🌍 Выберите страну прилёта:", reply_markup=keyboards.get_country_reply_keyboard())
         return config.SELECTING_FLEX_ARRIVAL_COUNTRY
     else: # ask_arr_no
         if query.message:
@@ -1508,7 +1508,7 @@ async def flex_ask_arrival_airport(update: Update, context: ContextTypes.DEFAULT
         context.user_data['arrival_airport_iata'] = None
 
         await context.bot.send_message(chat_id=update.effective_chat.id,
-            text="Указать конкретные даты?",
+            text="🗓️ Указать конкретные даты?",
             reply_markup=keyboards.get_skip_dates_keyboard(
                 callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes",
                 # Назад отсюда - к вопросу об аэропорте прилета (если город прилета был пропущен)
@@ -1555,7 +1555,7 @@ async def flex_arrival_city(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text="Указать конкретные даты?",
+        text="🗓️ Указать конкретные даты?",
         reply_markup=keyboards.get_skip_dates_keyboard(
             callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes",
             back_callback_data=config.CB_BACK_FLEX_ASK_DATES_TO_ARR_CITY # Назад к выбору города прилета
@@ -1612,7 +1612,7 @@ async def flex_departure_year_selected(update: Update, context: ContextTypes.DEF
 
     await ask_month(update, context, # Используем update, т.к. он содержит query для edit_message_text
                   year_for_months=selected_year,
-                  message_text=f"Год вылета: {selected_year}. Выберите месяц:",
+                  message_text=f"Год вылета: {selected_year}. 🗓️ Выберите месяц:",
                   callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_month_",
                   keyboard_back_callback=config.CB_BACK_FLEX_DEP_MONTH_TO_YEAR)
     return config.SELECTING_FLEX_DEPARTURE_MONTH
@@ -1649,7 +1649,7 @@ async def flex_departure_month_selected(update: Update, context: ContextTypes.DE
     context.user_data['departure_month'] = selected_month
     month_name = config.RUSSIAN_MONTHS.get(selected_month, str(selected_month))
     await ask_date_range(update, context, year, selected_month, # update содержит query
-                       f"Выбран: {month_name} {year}. Выберите диапазон дат:",
+                       f"Выбран: {month_name} {year}. 📏 Выберите диапазон дат:",
                        callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_range_",
                        keyboard_back_callback=config.CB_BACK_FLEX_DEP_RANGE_TO_MONTH)
     return config.SELECTING_FLEX_DEPARTURE_DATE_RANGE
@@ -1925,7 +1925,7 @@ async def back_flex_dep_year_to_ask_dates_handler(update: Update, context: Conte
         back_cb_for_ask_dates = config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR
 
     await query.edit_message_text(
-        text="Указать конкретные даты?",
+        text="🗓️ Указать конкретные даты?",
         reply_markup=keyboards.get_skip_dates_keyboard(
             callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes",
             back_callback_data=back_cb_for_ask_dates
@@ -1980,7 +1980,7 @@ async def back_flex_dep_date_to_range_handler(update: Update, context: ContextTy
 
     month_name = config.RUSSIAN_MONTHS.get(month, str(month))
     await ask_date_range(query, context, year, month,
-                       f"Выбран: {month_name} {year}. Выберите диапазон дат:",
+                       f"Выбран: {month_name} {year}. 📏 Выберите диапазон дат:",
                        callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_range_",
                        keyboard_back_callback=config.CB_BACK_FLEX_DEP_RANGE_TO_MONTH)
     return config.SELECTING_FLEX_DEPARTURE_DATE_RANGE
