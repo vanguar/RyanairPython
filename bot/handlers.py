@@ -534,21 +534,52 @@ async def end_search_session_callback(update: Update, context: ContextTypes.DEFA
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data.clear()
-    # Используем config.MSG_WELCOME напрямую, т.к. он уже не содержит Markdown для /команд
     main_menu_keyboard = keyboards.get_main_menu_keyboard()
+    chat_id = update.effective_chat.id
+    
+    image_sent_successfully = False
+    # Пытаемся отправить изображение, если путь к нему указан в конфигурации
+    welcome_image_path = getattr(config, 'WELCOME_IMAGE_PATH', None)
 
+    if welcome_image_path and os.path.exists(welcome_image_path):
+        try:
+            with open(welcome_image_path, 'rb') as photo_file:
+                await context.bot.send_photo(chat_id=chat_id, photo=photo_file)
+            image_sent_successfully = True
+        except Exception as e:
+            # Используйте logger, если он доступен, иначе можно просто проигнорировать ошибку или вывести в print
+            # logger.error(f"Ошибка при отправке приветственного изображения: {e}")
+            print(f"Ошибка при отправке приветственного изображения: {e}") # Замените на logger.error, если logger настроен
+
+    # Отправка текстового сообщения и клавиатуры
     if update.message:
+        # Изображение (если было) уже отправлено. Теперь отправляем текст.
         await update.message.reply_text(config.MSG_WELCOME, reply_markup=main_menu_keyboard)
     elif update.callback_query:
         await update.callback_query.answer()
         if update.callback_query.message:
-            try:
-                await update.callback_query.edit_message_text(config.MSG_WELCOME, reply_markup=main_menu_keyboard)
-            except Exception as e:
-                logger.warning(f"Не удалось отредактировать сообщение в start_command: {e}")
-                await context.bot.send_message(chat_id=update.effective_chat.id, text=config.MSG_WELCOME, reply_markup=main_menu_keyboard)
+            if image_sent_successfully:
+                # Если изображение отправлено, нельзя редактировать старое сообщение, чтобы добавить к нему фото.
+                # Отправляем новое сообщение с текстом и клавиатурой.
+                await context.bot.send_message(chat_id=chat_id, text=config.MSG_WELCOME, reply_markup=main_menu_keyboard)
+                # Опционально: удалить сообщение, с которого пришел callback, чтобы не было дублирования
+                try:
+                    await update.callback_query.message.delete()
+                except Exception as e:
+                    # logger.warning(f"Не удалось удалить предыдущее сообщение (callback): {e}")
+                    print(f"Не удалось удалить предыдущее сообщение (callback): {e}") # Замените на logger.warning
+            else:
+                # Изображение не отправлено, пытаемся отредактировать существующее сообщение
+                try:
+                    await update.callback_query.edit_message_text(config.MSG_WELCOME, reply_markup=main_menu_keyboard)
+                except Exception as e:
+                    # logger.warning(f"Не удалось отредактировать сообщение в start_command (callback): {e}")
+                    print(f"Не удалось отредактировать сообщение в start_command (callback): {e}") # Замените на logger.warning
+                    # Если редактирование не удалось, отправляем новое сообщение
+                    await context.bot.send_message(chat_id=chat_id, text=config.MSG_WELCOME, reply_markup=main_menu_keyboard)
         else:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=config.MSG_WELCOME, reply_markup=main_menu_keyboard)
+            # Если нет update.callback_query.message (маловероятно), отправляем новое сообщение
+            await context.bot.send_message(chat_id=chat_id, text=config.MSG_WELCOME, reply_markup=main_menu_keyboard)
 
 
 async def start_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

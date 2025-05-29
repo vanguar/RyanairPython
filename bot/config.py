@@ -17,6 +17,18 @@ if not TELEGRAM_BOT_TOKEN:
     logger.critical("Переменная окружения TELEGRAM_BOT_TOKEN не установлена!")
     # exit("Ошибка: TELEGRAM_BOT_TOKEN не найден.")
 
+# --- Путь к приветственному изображению ---
+# Изображение должно быть размещено в директории, доступной боту.
+# os.path.dirname(__file__) указывает на директорию config.py (bot/)
+# Таким образом, '../data/images/welcome_image.png' будет указывать на 'корень_проекта/data/images/welcome_image.png'
+WELCOME_IMAGE_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'images', 'welcome_image.png') # Замените 'welcome_image.png' на имя вашего файла
+
+# Проверка, существует ли файл изображения (опционально, полезно для отладки)
+if WELCOME_IMAGE_PATH and not os.path.exists(WELCOME_IMAGE_PATH):
+    logger.warning(f"Файл приветственного изображения не найден по пути: {WELCOME_IMAGE_PATH}")
+elif not WELCOME_IMAGE_PATH:
+    logger.info("Путь к приветственному изображению не настроен.")    
+
 # --- Загрузка данных о странах и аэропортах ---
 COUNTRIES_DATA_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'countries_data.json')
 COUNTRIES_DATA = {}
