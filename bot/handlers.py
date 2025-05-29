@@ -1,5 +1,6 @@
 # bot/handlers.py
 import logging
+import os
 from telegram import Update, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery # Добавлен CallbackQuery
 from telegram.ext import (
     CommandHandler,
