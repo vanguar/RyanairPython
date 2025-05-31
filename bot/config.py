@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID") # Опционально
+OPENWEATHER_API_KEY = os.environ["OPENWEATHER_API_KEY"]
 
 if not TELEGRAM_BOT_TOKEN:
     logger.critical("Переменная окружения TELEGRAM_BOT_TOKEN не установлена!")
