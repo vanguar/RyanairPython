@@ -16,7 +16,7 @@ from telegram.helpers import escape_markdown
 from decimal import Decimal, InvalidOperation
 from typing import Dict, Any, Union
 
-from . import config, keyboards, helpers, flight_api
+from . import config, keyboards, helpers, flight_api, message_formatter
 from .config import PriceChoice
 # Импортируем ВСЕ константы, включая новые CB_BACK_... и MSG_FLIGHT_TYPE_PROMPT
 from .config import (
@@ -477,7 +477,7 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
                 last_printed_date_str = original_date_str
 
 
-        formatted_flight = helpers.format_flight_details(flight) #
+        formatted_flight = message_formatter.format_flight_details(flight) # flights_message_parts.append(formatted_flight)
         flights_message_parts.append(formatted_flight)
     
     # --- КОНЕЦ ИЗМЕНЕНИЙ ДЛЯ ГЛОБАЛЬНОЙ СОРТИРОВКИ ---
@@ -2286,7 +2286,7 @@ async def handle_search_other_airports_decision(update: Update, context: Context
                     except ValueError:
                         alt_flights_final_message_parts.append(f"\n--- 📅 *{escape_markdown(date_key,version=2)}* ---\n")
                     for flight_alt in flights_on_this_date:
-                        alt_flights_final_message_parts.append(helpers.format_flight_details(flight_alt))
+                        alt_flights_final_message_parts.append(message_formatter.format_flight_details(flight_alt)) # <--- ИЗМЕНЕНИЕ
                     alt_flights_final_message_parts.append("\n")
 
             full_alt_message = "".join(alt_flights_final_message_parts)
