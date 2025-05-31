@@ -6,115 +6,143 @@ from telegram.helpers import escape_markdown
 
 logger = logging.getLogger(__name__)
 
+def _get_escaped_attr(obj: any, attr_name: str, default: str = 'N/A') -> str:
+    """
+    Вспомогательная функция для безопасного получения значения атрибута объекта 
+    и его экранирования для MarkdownV2, если это строка.
+    """
+    val = getattr(obj, attr_name, default)
+    if val is default and default == 'N/A': # Если значение по умолчанию и это 'N/A'
+        return 'N/A' # Возвращаем как есть, без экранирования 'N/A'
+    if isinstance(val, str):
+        return escape_markdown(val, version=2)
+    return escape_markdown(str(val), version=2) # Экранируем и другие типы после приведения к строке
+
 def format_flight_details(flight: any) -> str:
     """
     Форматирует информацию о рейсе для вывода пользователю.
     Используется разделитель '────────✈️────────'.
+    Менее строгая проверка атрибутов цены, как в оригинальной логике.
     """
-    # Ваш предпочтительный разделитель
     custom_separator = "────────✈️────────\n"
 
     try:
-        if hasattr(flight, 'price') and flight.price is not None:  # Рейс в одну сторону
-            departure_time_dt = flight.departureTime
-            if isinstance(departure_time_dt, str):
-                try:
-                    departure_time_dt = datetime.fromisoformat(departure_time_dt.replace("Z", "+00:00"))
-                except ValueError:
-                    logger.warning(f"Could not parse date string: {flight.departureTime}")
-            
-            departure_time_str = departure_time_dt.strftime("%Y-%m-%d %H:%M") if isinstance(departure_time_dt, datetime) else str(flight.departureTime)
-            
-            flight_number = _get_escaped_attr(flight, 'flightNumber')
-            origin_full = _get_escaped_attr(flight, 'originFull')
-            destination_full = _get_escaped_attr(flight, 'destinationFull')
-            
-            try:
-                price_val = Decimal(str(flight.price)).quantize(Decimal('0.01'))
-                price_str = str(price_val)
-            except InvalidOperation:
-                price_str = "N/A"
-            
-            currency = _get_escaped_attr(flight, 'currency')
-
-            return (
-                f"✈️ Рейс: {flight_number}\n"
-                f"🗺️ Маршрут: {origin_full} → {destination_full}\n"
-                f"🛫 Вылет: {escape_markdown(departure_time_str, version=2)}\n" 
-                f"💶 Цена: {escape_markdown(price_str, version=2)} {currency}\n"
-                f"{custom_separator}" # Используем ваш разделитель
-            )
-            
-        elif hasattr(flight, 'outbound') and flight.outbound and hasattr(flight.outbound, 'price') and \
-             hasattr(flight, 'inbound') and flight.inbound and hasattr(flight.inbound, 'price'):  # Рейс туда и обратно
-            
+        # Проверяем сначала на рейс "туда-обратно", так как он имеет более специфичную структуру
+        if hasattr(flight, 'outbound') and flight.outbound and hasattr(flight, 'inbound') and flight.inbound:
             outbound = flight.outbound
             inbound = flight.inbound
 
-            # ... (код для получения и форматирования дат вылета outbound и inbound остается прежним) ...
-            out_departure_time_dt = outbound.departureTime
+            out_departure_time_dt = getattr(outbound, 'departureTime', None)
             if isinstance(out_departure_time_dt, str):
                 try: 
                     out_departure_time_dt = datetime.fromisoformat(out_departure_time_dt.replace("Z", "+00:00"))
                 except ValueError: 
-                    logger.warning(f"Could not parse outbound date string: {outbound.departureTime}")
-            out_departure_time_str = out_departure_time_dt.strftime("%Y-%m-%d %H:%M") if isinstance(out_departure_time_dt, datetime) else str(outbound.departureTime)
+                    logger.warning(f"Could not parse outbound date string: {getattr(outbound, 'departureTime', 'N/A')}")
+            out_departure_time_str = out_departure_time_dt.strftime("%Y-%m-%d %H:%M") if isinstance(out_departure_time_dt, datetime) else str(getattr(outbound, 'departureTime', 'N/A'))
 
-            in_departure_time_dt = inbound.departureTime
+            in_departure_time_dt = getattr(inbound, 'departureTime', None)
             if isinstance(in_departure_time_dt, str):
                 try: 
                     in_departure_time_dt = datetime.fromisoformat(in_departure_time_dt.replace("Z", "+00:00"))
                 except ValueError: 
-                    logger.warning(f"Could not parse inbound date string: {inbound.departureTime}")
-            in_departure_time_str = in_departure_time_dt.strftime("%Y-%m-%d %H:%M") if isinstance(in_departure_time_dt, datetime) else str(inbound.departureTime)
+                    logger.warning(f"Could not parse inbound date string: {getattr(inbound, 'departureTime', 'N/A')}")
+            in_departure_time_str = in_departure_time_dt.strftime("%Y-%m-%d %H:%M") if isinstance(in_departure_time_dt, datetime) else str(getattr(inbound, 'departureTime', 'N/A'))
 
+            out_flight_number_val = getattr(outbound, 'flightNumber', 'N/A')
+            out_origin_full_val = getattr(outbound, 'originFull', 'N/A')
+            out_destination_full_val = getattr(outbound, 'destinationFull', 'N/A')
+            out_currency_val = getattr(outbound, 'currency', 'EUR') # По умолчанию EUR, если не указано
 
-            out_flight_number = _get_escaped_attr(outbound, 'flightNumber')
-            out_origin_full = _get_escaped_attr(outbound, 'originFull')
-            out_destination_full = _get_escaped_attr(outbound, 'destinationFull')
-            out_currency = _get_escaped_attr(outbound, 'currency')
+            out_price_attr = getattr(outbound, 'price', None)
+            out_price_str = "N/A"
+            out_price_val_decimal = None
+            if out_price_attr is not None:
+                try:
+                    out_price_val_decimal = Decimal(str(out_price_attr)).quantize(Decimal('0.01'))
+                    out_price_str = str(out_price_val_decimal)
+                except InvalidOperation:
+                    logger.warning(f"Invalid price format for outbound: {out_price_attr}")
+
+            in_flight_number_val = getattr(inbound, 'flightNumber', 'N/A')
+            in_origin_full_val = getattr(inbound, 'originFull', 'N/A')
+            in_destination_full_val = getattr(inbound, 'destinationFull', 'N/A')
+            # Валюта для inbound обычно та же, что и для outbound
             
-            try:
-                out_price_val = Decimal(str(outbound.price)).quantize(Decimal('0.01'))
-                out_price_str = str(out_price_val)
-            except InvalidOperation:
-                out_price_str = "N/A"
-                out_price_val = None
-
-            in_flight_number = _get_escaped_attr(inbound, 'flightNumber')
-            in_origin_full = _get_escaped_attr(inbound, 'originFull')
-            in_destination_full = _get_escaped_attr(inbound, 'destinationFull')
-            
-            try:
-                in_price_val = Decimal(str(inbound.price)).quantize(Decimal('0.01'))
-                in_price_str = str(in_price_val)
-            except InvalidOperation:
-                in_price_str = "N/A"
-                in_price_val = None
+            in_price_attr = getattr(inbound, 'price', None)
+            in_price_str = "N/A"
+            in_price_val_decimal = None
+            if in_price_attr is not None:
+                try:
+                    in_price_val_decimal = Decimal(str(in_price_attr)).quantize(Decimal('0.01'))
+                    in_price_str = str(in_price_val_decimal)
+                except InvalidOperation:
+                    logger.warning(f"Invalid price format for inbound: {in_price_attr}")
             
             total_price_str = "N/A"
-            if isinstance(out_price_val, Decimal) and isinstance(in_price_val, Decimal):
-                total_price_val = (out_price_val + in_price_val).quantize(Decimal('0.01'))
+            if isinstance(out_price_val_decimal, Decimal) and isinstance(in_price_val_decimal, Decimal):
+                total_price_val = (out_price_val_decimal + in_price_val_decimal).quantize(Decimal('0.01'))
                 total_price_str = str(total_price_val)
-
+            
+            # Используем _get_escaped_attr для значений, которые уже извлечены
             return (
                 f"🔄 Рейс туда и обратно\n\n"
                 f"➡️ Вылет туда:\n"
-                f"  ✈️ Рейс: {out_flight_number}\n"
-                f"  🗺️ Маршрут: {out_origin_full} → {out_destination_full}\n"
+                f"  ✈️ Рейс: {_get_escaped_attr(None, '', default=out_flight_number_val)}\n"
+                f"  🗺️ Маршрут: {_get_escaped_attr(None, '', default=out_origin_full_val)} → {_get_escaped_attr(None, '', default=out_destination_full_val)}\n"
                 f"  🛫 Вылет: {escape_markdown(out_departure_time_str, version=2)}\n"
-                f"  💶 Цена: {escape_markdown(out_price_str, version=2)} {out_currency}\n\n"
+                f"  💶 Цена: {escape_markdown(out_price_str, version=2)} {_get_escaped_attr(None, '', default=out_currency_val)}\n\n"
                 f"⬅️ Вылет обратно:\n"
-                f"  ✈️ Рейс: {in_flight_number}\n"
-                f"  🗺️ Маршрут: {in_origin_full} → {in_destination_full}\n"
+                f"  ✈️ Рейс: {_get_escaped_attr(None, '', default=in_flight_number_val)}\n"
+                f"  🗺️ Маршрут: {_get_escaped_attr(None, '', default=in_origin_full_val)} → {_get_escaped_attr(None, '', default=in_destination_full_val)}\n"
                 f"  🛫 Вылет: {escape_markdown(in_departure_time_str, version=2)}\n"
-                f"  💶 Цена: {escape_markdown(in_price_str, version=2)} {out_currency}\n\n"
-                f"💵 Общая цена: {escape_markdown(total_price_str, version=2)} {out_currency}\n"
-                f"{custom_separator}" # Используем ваш разделитель
+                f"  💶 Цена: {escape_markdown(in_price_str, version=2)} {_get_escaped_attr(None, '', default=out_currency_val)}\n\n" # Используем валюту от outbound
+                f"💵 Общая цена: {escape_markdown(total_price_str, version=2)} {_get_escaped_attr(None, '', default=out_currency_val)}\n"
+                f"{custom_separator}"
             )
-        else:
-            logger.warning(f"Не удалось отформатировать рейс, неизвестная структура: {flight}")
-            return escape_markdown("Не удалось отобразить информацию о рейсе.", version=2) + "\n"
+
+        # Проверяем на рейс "в одну сторону"
+        elif hasattr(flight, 'price') and flight.price is not None:
+            departure_time_dt = getattr(flight, 'departureTime', None)
+            if isinstance(departure_time_dt, str):
+                try:
+                    departure_time_dt = datetime.fromisoformat(departure_time_dt.replace("Z", "+00:00"))
+                except ValueError:
+                    logger.warning(f"Could not parse date string: {getattr(flight, 'departureTime', 'N/A')}")
+            
+            departure_time_str = departure_time_dt.strftime("%Y-%m-%d %H:%M") if isinstance(departure_time_dt, datetime) else str(getattr(flight, 'departureTime', 'N/A'))
+            
+            flight_number_val = getattr(flight, 'flightNumber', 'N/A')
+            origin_full_val = getattr(flight, 'originFull', 'N/A')
+            destination_full_val = getattr(flight, 'destinationFull', 'N/A')
+            
+            price_attr = getattr(flight, 'price', None) # Уже проверено, что не None
+            price_str = "N/A"
+            if price_attr is not None: # Дополнительная проверка для спокойствия
+                try:
+                    price_val = Decimal(str(price_attr)).quantize(Decimal('0.01'))
+                    price_str = str(price_val)
+                except InvalidOperation:
+                    logger.warning(f"Invalid price format for one-way: {price_attr}")
+
+            currency_val = getattr(flight, 'currency', 'EUR')
+
+            return (
+                f"✈️ Рейс: {_get_escaped_attr(None, '', default=flight_number_val)}\n"
+                f"🗺️ Маршрут: {_get_escaped_attr(None, '', default=origin_full_val)} → {_get_escaped_attr(None, '', default=destination_full_val)}\n"
+                f"🛫 Вылет: {escape_markdown(departure_time_str, version=2)}\n" 
+                f"💶 Цена: {escape_markdown(price_str, version=2)} {_get_escaped_attr(None, '', default=currency_val)}\n"
+                f"{custom_separator}"
+            )
+        else: # Если ни одно из условий не выполнилось (неизвестная структура)
+            logger.warning(f"Не удалось отформатировать рейс, неизвестная структура или отсутствуют ключевые поля (price/outbound): {flight}")
+            # Выводим больше информации об объекте flight для отладки
+            flight_attrs = {attr: getattr(flight, attr, 'N/A') for attr in dir(flight) if not callable(getattr(flight, attr)) and not attr.startswith("__")}
+            logger.debug(f"Атрибуты объекта flight, вызвавшего ошибку форматирования: {flight_attrs}")
+            return escape_markdown("Не удалось отобразить информацию о рейсе (неизвестная структура).", version=2) + "\n"
+
     except Exception as e:
-        logger.error(f"Ошибка при форматировании деталей рейса: {e}. Данные рейса: {flight}", exc_info=True)
-        return escape_markdown("Ошибка отображения информации о рейсе.", version=2) + "\n"
+        logger.error(f"Критическая ошибка при форматировании деталей рейса: {e}. Данные рейса: {flight}", exc_info=True)
+        # Выводим больше информации об объекте flight для отладки
+        flight_attrs = {attr: getattr(flight, attr, 'N/A') for attr in dir(flight) if not callable(getattr(flight, attr)) and not attr.startswith("__")}
+        logger.debug(f"Атрибуты объекта flight, вызвавшего критическую ошибку: {flight_attrs}")
+        return escape_markdown("Произошла ошибка при отображении информации о рейсе.", version=2) + "\n"
