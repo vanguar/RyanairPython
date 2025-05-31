@@ -20,7 +20,7 @@ def format_flight_details(flight: any) -> str:
     Экранирование Markdown удалено.
     Используется разделитель '────────✈️────────'.
     """
-    custom_separator = "────────✈️────────\n"
+    custom_separator = "\n────────✈️────────\n"
 
     try:
         if hasattr(flight, 'price') and flight.price is not None:  # Рейс в одну сторону
