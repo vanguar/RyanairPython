@@ -228,6 +228,7 @@ async def format_flight_details(flight: any,
                 logger.info(f"Прогноз погоды для города прилета {arr_city_for_weather} на {arr_target_dt} не получен.")
 
         if attempted_dep_weather or attempted_arr_weather:
+            flight_info_parts.append(f"{weather_separator}☝️ Прогноз доступен только на текущий день и до 5 дней вперёд.\n")
             flight_info_parts.append(f"{weather_separator}🌬️ Прогноз погоды:\n")
             if weather_text_parts:
                 flight_info_parts.append("\n".join(weather_text_parts) + "\n")
