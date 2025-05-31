@@ -37,6 +37,7 @@ async def format_flight_details(flight: any,
                     dep_target_dt = None
             elif isinstance(dt_raw, datetime):
                 dep_target_dt = dt_raw
+            arr_target_dt = dep_target_dt    
         # Иначе если есть outbound и inbound, считаем round-trip
         elif hasattr(flight, 'outbound') and flight.outbound and hasattr(flight, 'inbound') and flight.inbound:
             out_raw = getattr(flight.outbound, 'departureTime', None)
@@ -169,9 +170,7 @@ async def format_flight_details(flight: any,
             logger.warning(f"Не удалось отформатировать рейс (основная часть), неизвестная структура: {flight}.")
             flight_info_parts.append("Не удалось отобразить информацию о рейсе (неизвестная структура).\n")
 
-        # === 3) Промежуточная горизонтальная полоса перед прогнозом ===
-        flight_info_parts.append(f"\n{weather_separator}")
-
+       
         # === 4) Блок прогноза погоды ===
         dep_city_for_weather = departure_city_name
         arr_city_for_weather = arrival_city_name
