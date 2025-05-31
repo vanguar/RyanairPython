@@ -1243,7 +1243,7 @@ async def standard_arrival_city(update: Update, context: ContextTypes.DEFAULT_TY
     if not iata_code:
         await update.message.reply_text(
             f"Город '{escape_markdown(city, version=2)}' не найден. Выберите другую страну прилёта:",
-            reply_markup=keyboards.get_country_reply_keyboard(), parse_mode='MarkdownV2'
+            reply_markup=keyboards.get_country_reply_keyboard()
         )
         return config.S_SELECTING_ARRIVAL_COUNTRY
     if iata_code == context.user_data.get('departure_airport_iata'):
@@ -1541,7 +1541,7 @@ async def flex_arrival_city(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if not iata_code:
         await update.message.reply_text(
             f"Город '{escape_markdown(city, version=2)}' 🤷 не найден. Выберите другую страну прилёта:",
-            reply_markup=keyboards.get_country_reply_keyboard(), parse_mode='MarkdownV2'
+            reply_markup=keyboards.get_country_reply_keyboard()
         )
         return config.SELECTING_FLEX_ARRIVAL_COUNTRY
     departure_iata = context.user_data.get('departure_airport_iata')
@@ -2295,7 +2295,7 @@ async def handle_search_other_airports_decision(update: Update, context: Context
                 for i_alt_msg in range(0, len(escaped_full_alt_message), 4096):
                     chunk_alt = escaped_full_alt_message[i_alt_msg:i_alt_msg + 4096]
                     try:
-                        await context.bot.send_message(chat_id=update.effective_chat.id, text=chunk_alt, parse_mode='MarkdownV2')
+                        await context.bot.send_message(chat_id=update.effective_chat.id, text=chunk_alt)
                     except Exception:
                         await context.bot.send_message(chat_id=update.effective_chat.id, text=chunk_alt)
             else:
