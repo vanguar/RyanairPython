@@ -2,7 +2,7 @@
 import logging
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from bot import weather_api # Убедитесь, что этот импорт есть
+from bot import weather_api
 
 logger = logging.getLogger(__name__)
 
@@ -15,22 +15,28 @@ async def format_flight_details(flight: any,
                                 arrival_city_name: str | None = None) -> str:
     flight_info_parts = []
     custom_separator = "────────✈️────────\n"
-    weather_separator = "--------------------\n" # Разделитель для блока погоды
+    weather_separator = "--------------------\n"
+
+    logger.debug(f"Начало форматирования для объекта flight: {type(flight)}")
+    if flight is None:
+        logger.error("format_flight_details вызван с flight=None")
+        return "Ошибка: переданы неверные данные для форматирования рейса.\n"
 
     try:
         # Блок 1: Формирование основной информации о рейсе
-        # (Этот блок кода остается таким же, как в вашей последней рабочей версии,
-        #  которая корректно отображала рейсы без погоды. Я не буду его здесь повторять,
-        #  чтобы не загромождать ответ. Просто убедитесь, что он на месте и работает.)
-        # --- Начало вашего рабочего кода для информации о рейсе ---
         if hasattr(flight, 'price') and flight.price is not None:  # Рейс в одну сторону
-            departure_time_dt = getattr(flight, 'departureTime', None)
-            if isinstance(departure_time_dt, str):
+            logger.debug("Форматирование рейса в одну сторону")
+            
+            departure_time_val = getattr(flight, 'departureTime', None)
+            departure_time_str = str(departure_time_val) # По умолчанию
+            if isinstance(departure_time_val, str):
                 try:
-                    departure_time_dt = datetime.fromisoformat(departure_time_dt.replace("Z", "+00:00"))
+                    dt_obj = datetime.fromisoformat(departure_time_val.replace("Z", "+00:00"))
+                    departure_time_str = dt_obj.strftime("%Y-%m-%d %H:%M")
                 except ValueError:
-                    logger.warning(f"Could not parse date string: {getattr(flight, 'departureTime', 'N/A')}")
-            departure_time_str = departure_time_dt.strftime("%Y-%m-%d %H:%M") if isinstance(departure_time_dt, datetime) else str(getattr(flight, 'departureTime', 'N/A'))
+                    logger.warning(f"Could not parse date string: {departure_time_val}")
+            elif isinstance(departure_time_val, datetime): # Если это уже datetime
+                 departure_time_str = departure_time_val.strftime("%Y-%m-%d %H:%M")
             
             flight_number_val = _get_simple_attr(flight, 'flightNumber')
             origin_full_val = _get_simple_attr(flight, 'originFull')
@@ -42,8 +48,8 @@ async def format_flight_details(flight: any,
                 try:
                     price_val_decimal = Decimal(str(price_attr)).quantize(Decimal('0.01'))
                     price_str = str(price_val_decimal)
-                except InvalidOperation:
-                    logger.warning(f"Invalid price format for one-way: {price_attr}")
+                except (InvalidOperation, ValueError) as e_price: # Ловим и ValueError на всякий случай
+                    logger.warning(f"Invalid price format for one-way: {price_attr}, error: {e_price}")
             currency_val = _get_simple_attr(flight, 'currency', 'EUR')
 
             flight_info_parts.append(f"✈️ Рейс: {flight_number_val}\n")
@@ -52,20 +58,22 @@ async def format_flight_details(flight: any,
             flight_info_parts.append(f"💶 Цена: {price_str} {currency_val}\n")
         
         elif hasattr(flight, 'outbound') and flight.outbound and hasattr(flight, 'inbound') and flight.inbound:
+            logger.debug("Форматирование рейса туда-обратно")
             outbound = flight.outbound
             inbound = flight.inbound
 
-            out_departure_time_dt = getattr(outbound, 'departureTime', None)
-            if isinstance(out_departure_time_dt, str):
-                try: out_departure_time_dt = datetime.fromisoformat(out_departure_time_dt.replace("Z", "+00:00"))
-                except ValueError: logger.warning(f"Could not parse outbound date string: {getattr(outbound, 'departureTime', 'N/A')}")
-            out_departure_time_str = out_departure_time_dt.strftime("%Y-%m-%d %H:%M") if isinstance(out_departure_time_dt, datetime) else str(getattr(outbound, 'departureTime', 'N/A'))
+            # --- Outbound ---
+            out_departure_time_val = getattr(outbound, 'departureTime', None)
+            out_departure_time_str = str(out_departure_time_val)
+            if isinstance(out_departure_time_val, str):
+                try: 
+                    dt_obj = datetime.fromisoformat(out_departure_time_val.replace("Z", "+00:00"))
+                    out_departure_time_str = dt_obj.strftime("%Y-%m-%d %H:%M")
+                except ValueError: 
+                    logger.warning(f"Could not parse outbound date string: {out_departure_time_val}")
+            elif isinstance(out_departure_time_val, datetime):
+                 out_departure_time_str = out_departure_time_val.strftime("%Y-%m-%d %H:%M")
 
-            in_departure_time_dt = getattr(inbound, 'departureTime', None)
-            if isinstance(in_departure_time_dt, str):
-                try: in_departure_time_dt = datetime.fromisoformat(in_departure_time_dt.replace("Z", "+00:00"))
-                except ValueError: logger.warning(f"Could not parse inbound date string: {getattr(inbound, 'departureTime', 'N/A')}")
-            in_departure_time_str = in_departure_time_dt.strftime("%Y-%m-%d %H:%M") if isinstance(in_departure_time_dt, datetime) else str(getattr(inbound, 'departureTime', 'N/A'))
 
             out_flight_number_val = _get_simple_attr(outbound, 'flightNumber')
             out_origin_full_val = _get_simple_attr(outbound, 'originFull') 
@@ -78,7 +86,20 @@ async def format_flight_details(flight: any,
                 try:
                     out_price_val_decimal = Decimal(str(out_price_attr)).quantize(Decimal('0.01'))
                     out_price_str = str(out_price_val_decimal)
-                except InvalidOperation: logger.warning(f"Invalid price format for outbound: {out_price_attr}")
+                except (InvalidOperation, ValueError) as e_price: 
+                    logger.warning(f"Invalid price format for outbound: {out_price_attr}, error: {e_price}")
+
+            # --- Inbound ---
+            in_departure_time_val = getattr(inbound, 'departureTime', None)
+            in_departure_time_str = str(in_departure_time_val)
+            if isinstance(in_departure_time_val, str):
+                try: 
+                    dt_obj = datetime.fromisoformat(in_departure_time_val.replace("Z", "+00:00"))
+                    in_departure_time_str = dt_obj.strftime("%Y-%m-%d %H:%M")
+                except ValueError: 
+                    logger.warning(f"Could not parse inbound date string: {in_departure_time_val}")
+            elif isinstance(in_departure_time_val, datetime):
+                 in_departure_time_str = in_departure_time_val.strftime("%Y-%m-%d %H:%M")
 
             in_flight_number_val = _get_simple_attr(inbound, 'flightNumber')
             in_origin_full_val = _get_simple_attr(inbound, 'originFull')
@@ -90,7 +111,8 @@ async def format_flight_details(flight: any,
                 try:
                     in_price_val_decimal = Decimal(str(in_price_attr)).quantize(Decimal('0.01'))
                     in_price_str = str(in_price_val_decimal)
-                except InvalidOperation: logger.warning(f"Invalid price format for inbound: {in_price_attr}")
+                except (InvalidOperation, ValueError) as e_price: 
+                    logger.warning(f"Invalid price format for inbound: {in_price_attr}, error: {e_price}")
             
             total_price_str = "N/A"
             if isinstance(out_price_val_decimal, Decimal) and isinstance(in_price_val_decimal, Decimal):
@@ -107,47 +129,66 @@ async def format_flight_details(flight: any,
             flight_info_parts.append(f"  ✈️ Рейс: {in_flight_number_val}\n")
             flight_info_parts.append(f"  🗺️ Маршрут: {in_origin_full_val} → {in_destination_full_val}\n")
             flight_info_parts.append(f"  🛫 Вылет: {in_departure_time_str}\n")
-            flight_info_parts.append(f"  💶 Цена: {in_price_str} {out_currency_val}\n\n")
+            flight_info_parts.append(f"  💶 Цена: {in_price_str} {out_currency_val}\n\n") # Используем валюту от outbound
             flight_info_parts.append(f"💵 Общая цена: {total_price_str} {out_currency_val}\n")
         else: 
-            logger.warning(f"Не удалось отформатировать рейс (основная часть), неизвестная структура: {flight}")
+            logger.warning(f"Не удалось отформатировать рейс (основная часть), неизвестная структура: {flight}. "
+                           f"has 'price': {hasattr(flight, 'price')}, "
+                           f"has 'outbound': {hasattr(flight, 'outbound')}, outbound is: {getattr(flight, 'outbound', None)}, "
+                           f"has 'inbound': {hasattr(flight, 'inbound')}, inbound is: {getattr(flight, 'inbound', None)}")
             flight_info_parts.append("Не удалось отобразить информацию о рейсе (неизвестная структура).\n")
 
-        # Добавляем основной разделитель, если информация о рейсе была и это не сообщение об ошибке
         if flight_info_parts and flight_info_parts[-1] != "Не удалось отобразить информацию о рейсе (неизвестная структура).\n":
             flight_info_parts.append(f"\n{custom_separator}")
-        # --- Конец вашего рабочего кода для информации о рейсе ---
+        
+        # Блок 2: Формирование информации о погоде (без изменений по сравнению с предыдущей версией)
+        dep_city_for_weather = departure_city_name
+        arr_city_for_weather = arrival_city_name
 
-        # Блок 2: Формирование информации о погоде
+        if not dep_city_for_weather:
+            origin_source = None
+            if hasattr(flight, 'outbound') and flight.outbound: origin_source = flight.outbound
+            elif hasattr(flight, 'origin'): origin_source = flight
+            if origin_source:
+                origin_val = _get_simple_attr(origin_source, 'origin', '')
+                dep_city_for_weather = origin_val.split(',')[0].strip() if ',' in origin_val else origin_val
+        
+        if not arr_city_for_weather:
+            destination_source = None
+            if hasattr(flight, 'outbound') and flight.outbound: destination_source = flight.outbound
+            elif hasattr(flight, 'inbound') and flight.inbound: destination_source = flight.inbound
+            elif hasattr(flight, 'destination'): destination_source = flight
+            if destination_source:
+                dest_val = _get_simple_attr(destination_source, 'destination', '')
+                arr_city_for_weather = dest_val.split(',')[0].strip() if ',' in dest_val else dest_val
+        
         weather_text_parts = []
-        attempted_weather_fetch = False # Флаг, что мы пытались получить погоду хотя бы для одного релевантного города
+        attempted_dep_weather = False
+        attempted_arr_weather = False
 
-        if departure_city_name and departure_city_name != 'N/A':
-            attempted_weather_fetch = True
-            logger.debug(f"Запрос погоды для города вылета: {departure_city_name}")
-            dep_weather = await weather_api.get_weather_forecast(departure_city_name)
+        if dep_city_for_weather and dep_city_for_weather != 'N/A':
+            attempted_dep_weather = True
+            logger.debug(f"Запрос погоды для города вылета: {dep_city_for_weather}")
+            dep_weather = await weather_api.get_weather_forecast(dep_city_for_weather)
             if dep_weather:
                 weather_text_parts.append(f"  В г. {dep_weather['city']}: {dep_weather['temperature']}°C {dep_weather['emoji']}")
             else:
-                logger.info(f"Прогноз погоды для города вылета {departure_city_name} не получен.")
+                logger.info(f"Прогноз погоды для города вылета {dep_city_for_weather} не получен.")
         
-        # Запрашиваем погоду для города прилета, только если он указан и отличается от города вылета
-        if arrival_city_name and arrival_city_name != 'N/A' and \
-           (not departure_city_name or departure_city_name.lower() != arrival_city_name.lower()):
-            attempted_weather_fetch = True
-            logger.debug(f"Запрос погоды для города прилета: {arrival_city_name}")
-            arr_weather = await weather_api.get_weather_forecast(arrival_city_name)
+        if arr_city_for_weather and arr_city_for_weather != 'N/A' and \
+           (not dep_city_for_weather or dep_city_for_weather.lower() != arr_city_for_weather.lower() or not dep_weather): # добавил or not dep_weather
+            attempted_arr_weather = True
+            logger.debug(f"Запрос погоды для города прилета: {arr_city_for_weather}")
+            arr_weather = await weather_api.get_weather_forecast(arr_city_for_weather)
             if arr_weather:
                 weather_text_parts.append(f"  В г. {arr_weather['city']}: {arr_weather['temperature']}°C {arr_weather['emoji']}")
             else:
-                 logger.info(f"Прогноз погоды для города прилета {arrival_city_name} не получен.")
-        elif arrival_city_name and arrival_city_name != 'N/A' and \
-             departure_city_name and departure_city_name.lower() == arrival_city_name.lower() and weather_text_parts:
-            # Если города совпадают и погода для вылета уже есть, считаем, что попытка была, но не дублируем
-            attempted_weather_fetch = True
+                 logger.info(f"Прогноз погоды для города прилета {arr_city_for_weather} не получен.")
+        elif arr_city_for_weather and arr_city_for_weather != 'N/A' and \
+             dep_city_for_weather and dep_city_for_weather.lower() == arr_city_for_weather.lower() and weather_text_parts:
+            attempted_arr_weather = True 
 
-
-        if attempted_weather_fetch:
+        if attempted_dep_weather or attempted_arr_weather:
             flight_info_parts.append(f"{weather_separator}🌬️ Прогноз погоды:\n")
             if weather_text_parts:
                 flight_info_parts.append("\n".join(weather_text_parts) + "\n")
@@ -157,5 +198,11 @@ async def format_flight_details(flight: any,
         return "".join(flight_info_parts)
 
     except Exception as e:
-        logger.error(f"Критическая ошибка при форматировании деталей рейса (вкл. погоду): {e}. Данные рейса: {flight}", exc_info=True)
+        logger.error(f"Критическая ошибка при форматировании деталей рейса (вкл. погоду): {e}. Данные рейса: {type(flight)}", exc_info=True)
+        # Попытка вывести атрибуты, если это возможно
+        try:
+            flight_attrs = {attr: str(getattr(flight, attr, 'N/A')) for attr in dir(flight) if not callable(getattr(flight, attr)) and not attr.startswith("__")}
+            logger.debug(f"Атрибуты объекта flight (критическая ошибка): {flight_attrs}")
+        except Exception as e_attrs:
+            logger.error(f"Не удалось получить атрибуты объекта flight при ошибке: {e_attrs}")
         return "Произошла ошибка при отображении информации о рейсе (вкл. погоду).\n"
