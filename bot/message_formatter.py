@@ -234,7 +234,11 @@ async def format_flight_details(flight: any,
                 flight_info_parts.append("\n".join(weather_text_parts) + "\n")
             else:
                 flight_info_parts.append("  В данный момент прогноз погоды недоступен.\n")
+        
 
+        flight_info_parts.append(
+        '☕ <b><a href="https://t.me/YourDonateLink">Кофе разработчику</a></b>\n'
+        )
         # === 5) Основная линия с ✈️ в самом конце ===
         flight_info_parts.append(f"\n{custom_separator}")
 

@@ -491,7 +491,7 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
             for i in range(0, len(full_text), max_telegram_message_length):
                 chunk = full_text[i:i + max_telegram_message_length]
                 try:
-                    await context.bot.send_message(chat_id=chat_id, text=chunk) # Без parse_mode
+                    await context.bot.send_message(chat_id=chat_id, text=chunk, parse_mode="HTML") # Без parse_mode
                 except Exception as e_send_chunk:
                     logger.error(f"Не удалось отправить чанк рейсов: {e_send_chunk}")
                     if i == 0:
