@@ -136,8 +136,6 @@ async def format_flight_details(flight: any,
             logger.warning(f"Не удалось отформатировать рейс (основная часть), неизвестная структура: {flight}.")
             flight_info_parts.append("Не удалось отобразить информацию о рейсе (неизвестная структура).\n")
 
-        # После информации о рейсе — промежуточная горизонтальная полоса
-        flight_info_parts.append(f"\n{weather_separator}")
 
         # === Блок 2: формирование информации о погоде ===
         dep_city_for_weather = departure_city_name
