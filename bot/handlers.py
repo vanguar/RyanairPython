@@ -1242,7 +1242,7 @@ async def standard_arrival_city(update: Update, context: ContextTypes.DEFAULT_TY
     iata_code = helpers.get_airport_iata(country, city)
     if not iata_code:
         await update.message.reply_text(
-            f"Город '{escape_markdown(city, version=2)}' не найден. Выберите другую страну прилёта:",
+            f"Город '{city}' не найден. Выберите другую страну прилёта:",
             reply_markup=keyboards.get_country_reply_keyboard()
         )
         return config.S_SELECTING_ARRIVAL_COUNTRY
@@ -1540,7 +1540,7 @@ async def flex_arrival_city(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     iata_code = helpers.get_airport_iata(country, city)
     if not iata_code:
         await update.message.reply_text(
-            f"Город '{escape_markdown(city, version=2)}' 🤷 не найден. Выберите другую страну прилёта:",
+            f"Город '{city}' 🤷 не найден. Выберите другую страну прилёта:",
             reply_markup=keyboards.get_country_reply_keyboard()
         )
         return config.SELECTING_FLEX_ARRIVAL_COUNTRY
@@ -2278,20 +2278,20 @@ async def handle_search_other_airports_decision(update: Update, context: Context
             alt_flights_final_message_parts = [f"✈️✨ Найдены рейсы из других аэропортов в {departure_country}:\n"]
             for source_airport_info, flights_by_sub_date_dict in found_alternative_flights_data.items():
                 if not flights_by_sub_date_dict: continue
-                alt_flights_final_message_parts.append(f"\n✈️ --- *✈️ Из аэропорта: {escape_markdown(source_airport_info, version=2)}* ---\n")
+                alt_flights_final_message_parts.append(f"\n✈️ Из аэропорта: {source_airport_info} ---\n")
                 for date_key, flights_on_this_date in sorted(flights_by_sub_date_dict.items()):
                     try:
                         date_obj_alt = datetime.strptime(date_key, "%Y-%m-%d")
                         alt_flights_final_message_parts.append(f"\n--- 📅 *{date_obj_alt.strftime('%d %B %Y (%A)')}* ---\n")
                     except ValueError:
-                        alt_flights_final_message_parts.append(f"\n--- 📅 *{escape_markdown(date_key,version=2)}* ---\n")
+                        alt_flights_final_message_parts.append(f"\n--- 📅 {date_key} ---\n")
                     for flight_alt in flights_on_this_date:
                         alt_flights_final_message_parts.append(message_formatter.format_flight_details(flight_alt)) # <--- ИЗМЕНЕНИЕ
                     alt_flights_final_message_parts.append("\n")
 
             full_alt_message = "".join(alt_flights_final_message_parts)
             if len(full_alt_message) > len(f"✈️✨ Найдены рейсы из других аэропортов в {departure_country}:\n") + 20:
-                escaped_full_alt_message = escape_markdown(full_alt_message, version=2)
+                escaped_full_alt_message = full_alt_message
                 for i_alt_msg in range(0, len(escaped_full_alt_message), 4096):
                     chunk_alt = escaped_full_alt_message[i_alt_msg:i_alt_msg + 4096]
                     try:
