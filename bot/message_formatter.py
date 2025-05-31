@@ -2,7 +2,7 @@
 import logging
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-# from bot import weather_api # Пока отключаем, если не используется больше нигде
+from bot import weather_api # Убедитесь, что этот импорт есть
 
 logger = logging.getLogger(__name__)
 
@@ -10,14 +10,19 @@ def _get_simple_attr(obj: any, attr_name: str, default: str = 'N/A') -> str:
     val = getattr(obj, attr_name, default)
     return str(val)
 
-# Убираем async и параметры departure_city_name, arrival_city_name из сигнатуры
-def format_flight_details(flight: any) -> str:
+async def format_flight_details(flight: any, 
+                                departure_city_name: str | None = None, 
+                                arrival_city_name: str | None = None) -> str:
     flight_info_parts = []
     custom_separator = "────────✈️────────\n"
-    # weather_separator = "--------------------\n" # Пока не нужен
+    weather_separator = "--------------------\n" # Разделитель для блока погоды
 
     try:
-        # Блок 1: Формирование основной информации о рейсе (ваш рабочий код)
+        # Блок 1: Формирование основной информации о рейсе
+        # (Этот блок кода остается таким же, как в вашей последней рабочей версии,
+        #  которая корректно отображала рейсы без погоды. Я не буду его здесь повторять,
+        #  чтобы не загромождать ответ. Просто убедитесь, что он на месте и работает.)
+        # --- Начало вашего рабочего кода для информации о рейсе ---
         if hasattr(flight, 'price') and flight.price is not None:  # Рейс в одну сторону
             departure_time_dt = getattr(flight, 'departureTime', None)
             if isinstance(departure_time_dt, str):
@@ -47,8 +52,6 @@ def format_flight_details(flight: any) -> str:
             flight_info_parts.append(f"💶 Цена: {price_str} {currency_val}\n")
         
         elif hasattr(flight, 'outbound') and flight.outbound and hasattr(flight, 'inbound') and flight.inbound:
-            # ... (ваш существующий и работающий код для рейса "туда-обратно" без изменений) ...
-            # Я скопирую его из вашего предыдущего рабочего варианта для полноты
             outbound = flight.outbound
             inbound = flight.inbound
 
@@ -108,30 +111,51 @@ def format_flight_details(flight: any) -> str:
             flight_info_parts.append(f"💵 Общая цена: {total_price_str} {out_currency_val}\n")
         else: 
             logger.warning(f"Не удалось отформатировать рейс (основная часть), неизвестная структура: {flight}")
-            # flight_attrs = {attr: getattr(flight, attr, 'N/A') for attr in dir(flight) if not callable(getattr(flight, attr)) and not attr.startswith("__")}
-            # logger.debug(f"Атрибуты объекта flight (основная часть): {flight_attrs}")
             flight_info_parts.append("Не удалось отобразить информацию о рейсе (неизвестная структура).\n")
 
-        # Добавляем основной разделитель, если информация о рейсе была
+        # Добавляем основной разделитель, если информация о рейсе была и это не сообщение об ошибке
         if flight_info_parts and flight_info_parts[-1] != "Не удалось отобразить информацию о рейсе (неизвестная структура).\n":
             flight_info_parts.append(f"\n{custom_separator}")
+        # --- Конец вашего рабочего кода для информации о рейсе ---
 
-        # ----- БЛОК ПОГОДЫ ПОКА ПОЛНОСТЬЮ ОТКЛЮЧЕН -----
-        # weather_text_parts = []
-        # attempted_dep_weather = False
-        # attempted_arr_weather = False
-        # ... (весь код, связанный с attempted_dep_weather, attempted_arr_weather, dep_weather, arr_weather, и вызовом weather_api.get_weather_forecast)
-        # if attempted_dep_weather or attempted_arr_weather:
-        #     flight_info_parts.append(f"{weather_separator}🌬️ Прогноз погоды:\n")
-        #     if weather_text_parts: 
-        #         flight_info_parts.append("\n".join(weather_text_parts) + "\n")
-        #     else: 
-        #         flight_info_parts.append("  В данный момент прогноз погоды недоступен.\n")
+        # Блок 2: Формирование информации о погоде
+        weather_text_parts = []
+        attempted_weather_fetch = False # Флаг, что мы пытались получить погоду хотя бы для одного релевантного города
+
+        if departure_city_name and departure_city_name != 'N/A':
+            attempted_weather_fetch = True
+            logger.debug(f"Запрос погоды для города вылета: {departure_city_name}")
+            dep_weather = await weather_api.get_weather_forecast(departure_city_name)
+            if dep_weather:
+                weather_text_parts.append(f"  В г. {dep_weather['city']}: {dep_weather['temperature']}°C {dep_weather['emoji']}")
+            else:
+                logger.info(f"Прогноз погоды для города вылета {departure_city_name} не получен.")
+        
+        # Запрашиваем погоду для города прилета, только если он указан и отличается от города вылета
+        if arrival_city_name and arrival_city_name != 'N/A' and \
+           (not departure_city_name or departure_city_name.lower() != arrival_city_name.lower()):
+            attempted_weather_fetch = True
+            logger.debug(f"Запрос погоды для города прилета: {arrival_city_name}")
+            arr_weather = await weather_api.get_weather_forecast(arrival_city_name)
+            if arr_weather:
+                weather_text_parts.append(f"  В г. {arr_weather['city']}: {arr_weather['temperature']}°C {arr_weather['emoji']}")
+            else:
+                 logger.info(f"Прогноз погоды для города прилета {arrival_city_name} не получен.")
+        elif arrival_city_name and arrival_city_name != 'N/A' and \
+             departure_city_name and departure_city_name.lower() == arrival_city_name.lower() and weather_text_parts:
+            # Если города совпадают и погода для вылета уже есть, считаем, что попытка была, но не дублируем
+            attempted_weather_fetch = True
+
+
+        if attempted_weather_fetch:
+            flight_info_parts.append(f"{weather_separator}🌬️ Прогноз погоды:\n")
+            if weather_text_parts:
+                flight_info_parts.append("\n".join(weather_text_parts) + "\n")
+            else:
+                flight_info_parts.append("  В данный момент прогноз погоды недоступен.\n")
         
         return "".join(flight_info_parts)
 
     except Exception as e:
-        logger.error(f"Критическая ошибка при форматировании деталей рейса: {e}. Данные рейса: {flight}", exc_info=True)
-        # flight_attrs = {attr: getattr(flight, attr, 'N/A') for attr in dir(flight) if not callable(getattr(flight, attr)) and not attr.startswith("__")}
-        # logger.debug(f"Атрибуты объекта flight (критическая ошибка): {flight_attrs}")
-        return "Произошла ошибка при отображении информации о рейсе.\n" # Убрал "(вкл. погоду)"
+        logger.error(f"Критическая ошибка при форматировании деталей рейса (вкл. погоду): {e}. Данные рейса: {flight}", exc_info=True)
+        return "Произошла ошибка при отображении информации о рейсе (вкл. погоду).\n"
