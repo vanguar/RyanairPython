@@ -237,8 +237,11 @@ async def format_flight_details(flight: any,
         
 
         flight_info_parts.append(
-        '☕ <b><a href="https://t.me/YourDonateLink">Кофе разработчику</a></b>\n'
+            '☕ <b><a href="https://tronscan.org/#/address/TZ6rTYbF5Go94Q4f9uZwcVZ4g3oAnzwDHN">'
+            'Кофе разработчику (USDT TRC-20)</a></b>\n'
         )
+
+
         # === 5) Основная линия с ✈️ в самом конце ===
         flight_info_parts.append(f"\n{custom_separator}")
 
