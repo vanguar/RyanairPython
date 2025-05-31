@@ -477,8 +477,12 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
                 last_printed_date_str = original_date_str
 
 
-        formatted_flight = message_formatter.format_flight_details(flight) # flights_message_parts.append(formatted_flight)
-        flights_message_parts.append(formatted_flight)
+        formatted_flight_msg = await message_formatter.format_flight_details(
+            flight,
+            departure_city_name=dep_city_name, # dep_city_name должен быть определен выше
+            arrival_city_name=arr_city_name    # arr_city_name должен быть определен выше
+        )
+        flights_message_parts.append(formatted_flight_msg)
     
     # --- КОНЕЦ ИЗМЕНЕНИЙ ДЛЯ ГЛОБАЛЬНОЙ СОРТИРОВКИ ---
 
