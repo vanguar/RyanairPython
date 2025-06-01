@@ -237,9 +237,12 @@ async def format_flight_details(flight: any,
         
 
         flight_info_parts.append(
-            '☕ <b><a href="https://tronscan.org/#/address/TZ6rTYbF5Go94Q4f9uZwcVZ4g3oAnzwDHN">'
-            'Кофе разработчику (USDT TRC-20)</a></b>\n'
+            '☕ Кофе разработчику (USDT TRC-20): '
+            '<code>TZ6rTYbF5Go94Q4f9uZwcVZ4g3oAnzwDHN</code>\n'
+            '⚡ Кофе разработчику (TON): '
+            '<code>UQB0W1KEAR7RFQ03AIA872jw-2G2ntydiXlyhfTN8rAb2KN5</code>\n'
         )
+
 
 
         # === 5) Основная линия с ✈️ в самом конце ===
