@@ -237,10 +237,10 @@ async def format_flight_details(flight: any,
         
 
         flight_info_parts.append(
-            '☕ Кофе разработчику (USDT TRC-20): '
-            '<code>TZ6rTYbF5Go94Q4f9uZwcVZ4g3oAnzwDHN</code>\n'
-            '⚡ Кофе разработчику (TON): '
-            '<code>UQB0W1KEAR7RFQ03AIA872jw-2G2ntydiXlyhfTN8rAb2KN5</code>\n'
+            '☕ <b><a href="https://tronscan.org/#/address/TZ6rTYbF5Go94Q4f9uZwcVZ4g3oAnzwDHN">'
+            'Поддержать USDT (TRC-20)</a></b>\n'
+            '⚡ <b><a href="https://tonviewer.com/UQB0W1KEAR7RFQ03AIA872jw-2G2ntydiXlyhfTN8rAb2KN5">'
+            'Поддержать TON</a></b>\n'
         )
 
 
