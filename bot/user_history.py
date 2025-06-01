@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal # Оставьте, если используется для конвертации max_price
 from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -17,12 +17,10 @@ SEARCH_PARAM_KEYS = [
     'arrival_country', 'arrival_city_name'
 ]
 
-async def _get_db_connection():
-    return await aiosqlite.connect(DB_NAME, timeout=10)
-
 async def init_db():
+    """Инициализирует БД и создает таблицу search_history, если ее нет."""
     try:
-        async with await _get_db_connection() as conn:
+        async with aiosqlite.connect(DB_NAME, timeout=10) as conn: # Прямое использование
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS search_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,8 +33,10 @@ async def init_db():
             logger.info(f"База данных {DB_NAME} инициализирована, таблица search_history проверена/создана.")
     except Exception as e:
         logger.error(f"Ошибка инициализации базы данных: {e}", exc_info=True)
+        # raise # Раскомментируйте, если критично остановить бота при ошибке инициализации БД
 
 async def save_search_parameters(user_id: int, search_params: Dict[str, Any]):
+    """Сохраняет параметры поиска пользователя в БД."""
     if not user_id or not search_params:
         logger.warning("Попытка сохранить параметры поиска без user_id или с пустыми параметрами.")
         return
@@ -58,7 +58,7 @@ async def save_search_parameters(user_id: int, search_params: Dict[str, Any]):
 
     params_json = json.dumps(params_to_save)
     try:
-        async with await _get_db_connection() as conn:
+        async with aiosqlite.connect(DB_NAME, timeout=10) as conn: # Прямое использование
             await conn.execute('''
                 INSERT INTO search_history (user_id, search_parameters)
                 VALUES (?, ?)
@@ -69,11 +69,12 @@ async def save_search_parameters(user_id: int, search_params: Dict[str, Any]):
         logger.error(f"Ошибка сохранения параметров поиска для user_id {user_id}: {e}", exc_info=True)
 
 async def get_last_saved_search(user_id: int) -> Optional[Dict[str, Any]]:
+    """Извлекает самые последние сохраненные параметры поиска для пользователя."""
     if not user_id:
         return None
     try:
-        async with await _get_db_connection() as conn:
-            conn.row_factory = aiosqlite.Row
+        async with aiosqlite.connect(DB_NAME, timeout=10) as conn: # Прямое использование
+            conn.row_factory = aiosqlite.Row # Устанавливаем до первого execute, где нужен доступ по именам
             async with conn.execute('''
                 SELECT search_parameters FROM search_history
                 WHERE user_id = ?
@@ -88,7 +89,7 @@ async def get_last_saved_search(user_id: int) -> Optional[Dict[str, Any]]:
                 if 'max_price' in loaded_params and loaded_params['max_price'] is not None:
                     try:
                         loaded_params['max_price'] = Decimal(loaded_params['max_price'])
-                    except Exception:
+                    except Exception: 
                         logger.warning(f"Не удалось конвертировать max_price обратно в Decimal для user {user_id}")
                         loaded_params['max_price'] = None
                 logger.info(f"Извлечен последний сохраненный поиск для user_id {user_id}.")
@@ -99,10 +100,11 @@ async def get_last_saved_search(user_id: int) -> Optional[Dict[str, Any]]:
         return None
 
 async def has_saved_searches(user_id: int) -> bool:
+    """Проверяет, есть ли у пользователя сохраненные параметры поиска."""
     if not user_id:
         return False
     try:
-        async with await _get_db_connection() as conn:
+        async with aiosqlite.connect(DB_NAME, timeout=10) as conn: # Прямое использование
             async with conn.execute('''
                 SELECT 1 FROM search_history
                 WHERE user_id = ?
