@@ -17,6 +17,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Dict, Any, Union
 
 from . import config, keyboards, helpers, flight_api, message_formatter
+from . import user_history
 from .config import PriceChoice
 # Импортируем ВСЕ константы, включая новые CB_BACK_... и MSG_FLIGHT_TYPE_PROMPT
 from .config import (
@@ -51,7 +52,11 @@ from .config import (
     CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES, CB_BACK_FLEX_DEP_MONTH_TO_YEAR,
     CB_BACK_FLEX_DEP_RANGE_TO_MONTH, CB_BACK_FLEX_DEP_DATE_TO_RANGE,
     CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE, CB_BACK_FLEX_RET_MONTH_TO_YEAR,
-    CB_BACK_FLEX_RET_RANGE_TO_MONTH, CB_BACK_FLEX_RET_DATE_TO_RANGE
+    CB_BACK_FLEX_RET_RANGE_TO_MONTH, CB_BACK_FLEX_RET_DATE_TO_RANGE,
+    ASK_SAVE_SEARCH_PREFERENCES,
+    CALLBACK_SAVE_SEARCH_YES, # Для определения в ConversationHandler, если паттерн используется там напрямую
+    CALLBACK_SAVE_SEARCH_NO,  # Аналогично
+    CALLBACK_START_LAST_SAVED_SEARCH # Для entry_points в ConversationHandler
 )
 
 logger = logging.getLogger(__name__)
@@ -337,8 +342,18 @@ async def ask_specific_date(source_update_or_query: Union[Update, CallbackQuery,
                 logger.error(f"ask_specific_date: Ошибка и при отправке нового сообщения: {e_send}")
 
 # --- ОСНОВНЫЕ ОБРАБОТЧИКИ ---
+# bot/handlers.py
+# ... (после ask_... функций) ...
+
 async def launch_flight_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    effective_chat_id = update.effective_chat.id
+    """
+    Собирает параметры из context.user_data, вызывает API поиска рейсов
+    и передает результат в process_and_send_flights.
+    """
+    effective_chat_id = update.effective_chat.id if update.effective_chat else None
+    if not effective_chat_id and update.callback_query and update.callback_query.message:
+        effective_chat_id = update.callback_query.message.chat_id
+
     try:
         dep_iata: Union[str, None] = context.user_data.get('departure_airport_iata')
         arr_iata: Union[str, None] = context.user_data.get('arrival_airport_iata')
@@ -349,173 +364,231 @@ async def launch_flight_search(update: Update, context: ContextTypes.DEFAULT_TYP
         is_one_way: bool = context.user_data.get('flight_type_one_way', True)
         current_flow: Union[str, None] = context.user_data.get('current_search_flow')
 
-        logger.info("=== Запуск launch_flight_search ===")
         logger.info(
-            "Параметры: price_pref=%s, user_max_price=%s, dep_iata=%s, arr_iata=%s, dep_date=%s, ret_date=%s, one_way=%s, current_flow=%s",
+            "Запуск launch_flight_search. Параметры: price_pref=%s, user_max_price=%s, dep_iata=%s, arr_iata=%s, dep_date=%s, ret_date=%s, one_way=%s, current_flow=%s",
             price_preference, user_max_price, dep_iata, arr_iata, dep_date_str, ret_date_str, is_one_way, current_flow
         )
 
-        if not dep_iata:
-            msg = "Ошибка: Аэропорт вылета не был указан. Пожалуйста, начните поиск заново: /start"
+        if not dep_iata: # Минимальная валидация
+            msg = "Ошибка: Аэропорт вылета не был указан для запуска поиска. Начните заново: /start"
             if update.callback_query and update.callback_query.message:
                 try: await update.callback_query.edit_message_text(msg)
-                except Exception: await context.bot.send_message(effective_chat_id, msg)
+                except Exception: 
+                    if effective_chat_id: await context.bot.send_message(effective_chat_id, msg)
             elif update.message:
                 await update.message.reply_text(msg)
-            else:
+            elif effective_chat_id:
                 await context.bot.send_message(effective_chat_id, msg)
             return ConversationHandler.END
+        
+        if effective_chat_id: # Отправляем сообщение о начале поиска
+            await context.bot.send_message(chat_id=effective_chat_id, text=config.MSG_SEARCHING_FLIGHTS)
 
-        await context.bot.send_message(chat_id=effective_chat_id, text=config.MSG_SEARCHING_FLIGHTS)
-
+        # ВАШ СУЩЕСТВУЮЩИЙ ВЫЗОВ API для поиска рейсов
         all_flights_data: Dict[str, list] = await flight_api.find_flights_with_fallback(
             departure_airport_iata=dep_iata,
             arrival_airport_iata=arr_iata,
             departure_date_str=dep_date_str,
-            max_price=user_max_price,
+            max_price=user_max_price, # Должен быть Decimal или None
             return_date_str=ret_date_str,
             is_one_way=is_one_way
         )
 
         logger.info(f"API flight_api.find_flights_with_fallback вернул: {'Данные есть (ключи: ' + str(list(all_flights_data.keys())) + ')' if isinstance(all_flights_data, dict) and all_flights_data else 'Пустой результат или не словарь'}")
-        if not isinstance(all_flights_data, dict):
+        if not isinstance(all_flights_data, dict): # Дополнительная проверка
              logger.warning(f"find_flights_with_fallback вернул не словарь: {type(all_flights_data)}")
              all_flights_data = {}
 
+        # ВАША СУЩЕСТВУЮЩАЯ ЛОГИКА ФИЛЬТРАЦИИ РЕЙСОВ
         final_flights_to_show: Dict[str, list]
-        if price_preference == config.CALLBACK_PRICE_LOWEST:
+        if price_preference == config.CALLBACK_PRICE_LOWEST and all_flights_data:
             final_flights_to_show = helpers.filter_cheapest_flights(all_flights_data)
             logger.info(f"После filter_cheapest_flights для 'lowest': {'Данные есть' if final_flights_to_show else 'Пусто'}")
-        else:
+        else: # CALLBACK_PRICE_ALL, CALLBACK_PRICE_CUSTOM или если all_flights_data пуст
             final_flights_to_show = all_flights_data
             logger.info(f"Для '{price_preference}': используются все полученные рейсы ({'Данные есть' if final_flights_to_show else 'Пусто'})")
 
         return await process_and_send_flights(update, context, final_flights_to_show)
 
     except Exception as e:
-        logger.error(f"Ошибка в launch_flight_search: {e}", exc_info=True)
-        error_msg = config.MSG_ERROR_OCCURRED + " Пожалуйста, попробуйте /start"
-        target_chat_id = update.effective_chat.id
-        if update.callback_query:
-            await update.callback_query.answer()
-            try:
-                if update.callback_query.message:
-                    await update.callback_query.edit_message_text(text=error_msg)
-                else:
-                    await context.bot.send_message(target_chat_id, error_msg)
-            except Exception:
-                 await context.bot.send_message(target_chat_id, error_msg)
-        elif update.message:
-             await update.message.reply_text(error_msg)
-        else:
-             if target_chat_id:
-                await context.bot.send_message(target_chat_id, error_msg)
-             else:
-                logger.error("Не удалось определить chat_id для отправки сообщения об ошибке в launch_flight_search.")
+        logger.error(f"Критическая ошибка в launch_flight_search: {e}", exc_info=True)
+        error_msg = config.MSG_ERROR_OCCURRED + " (launch_fs). Пожалуйста, попробуйте /start."
+        # ... (ваша существующая логика обработки ошибок и отправки сообщения пользователю в launch_flight_search) ...
+        target_chat_id_err = update.effective_chat.id if update.effective_chat else None
+        if not target_chat_id_err and update.callback_query and update.callback_query.message:
+            target_chat_id_err = update.callback_query.message.chat_id
+
+        if target_chat_id_err:
+            if update.callback_query:
+                await update.callback_query.answer()
+                try:
+                    if update.callback_query.message: await update.callback_query.edit_message_text(text=error_msg)
+                    else: await context.bot.send_message(target_chat_id_err, error_msg)
+                except Exception: await context.bot.send_message(target_chat_id_err, error_msg)
+            elif update.message: await update.message.reply_text(error_msg)
+            else: await context.bot.send_message(target_chat_id_err, error_msg)
+        else: logger.error("Не удалось определить chat_id для отправки сообщения об ошибке в launch_flight_search.")
         return ConversationHandler.END
 
-async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT_TYPE, flights_by_date: Dict[str, list]) -> int:
-    chat_id = update.effective_chat.id
-    context.user_data.pop('remaining_flights_to_show', None)
+# bot/handlers.py
+# ... (после launch_flight_search) ...
 
-    if not flights_by_date:
+async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT_TYPE, flights_by_date: Dict[str, list]) -> int:
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if not chat_id and update.callback_query and update.callback_query.message:
+        chat_id = update.callback_query.message.chat_id
+    
+    if not chat_id:
+        logger.error("process_and_send_flights: Не удалось определить chat_id.")
+        return ConversationHandler.END # Или другая обработка ошибки
+
+    # context.user_data.pop('remaining_flights_to_show', None) # Если у вас была такая переменная
+
+    if not flights_by_date or not any(flights_by_date.values()): # Если словарь пуст или все списки в нем пусты
         await context.bot.send_message(chat_id=chat_id, text=config.MSG_NO_FLIGHTS_FOUND)
+        
+        # Проверка возможности поиска из других аэропортов
         dep_country = context.user_data.get('departure_country')
         dep_airport_iata = context.user_data.get('departure_airport_iata')
-
+        
         if dep_country and dep_airport_iata and \
            config.COUNTRIES_DATA.get(dep_country) and \
            len(config.COUNTRIES_DATA[dep_country]) > 1 and \
            not context.user_data.get("_already_searched_alternatives", False):
+            
             text_ask_other_airports = f"Хотите поискать вылеты из других аэропортов в стране {dep_country} по этому же направлению и датам?"
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=text_ask_other_airports,
                 reply_markup=keyboards.get_search_other_airports_keyboard(dep_country)
             )
-            return config.ASK_SEARCH_OTHER_AIRPORTS
-
-        await context.bot.send_message(
-            chat_id=chat_id, text="Что дальше?",
-            reply_markup=keyboards.get_yes_no_keyboard(
-                yes_callback="prompt_new_search_type", no_callback="end_search_session",
-                yes_text="✅ Начать новый поиск", no_text="❌ Закончить"
-            )
-        )
-        return ConversationHandler.END
-
-    await context.bot.send_message(chat_id=chat_id, text=config.MSG_FLIGHTS_FOUND_SEE_BELOW)
-
-    all_flights_with_original_date = []
-    for date_str, flights_list in flights_by_date.items():
-        for flight_obj in flights_list:
-            all_flights_with_original_date.append({'original_date_str': date_str, 'flight': flight_obj})
-
-    globally_sorted_flights_with_date = sorted(all_flights_with_original_date, key=lambda x: helpers.get_flight_price(x['flight']))
-
-    flights_message_parts = []
-    last_printed_date_str = None
-
-    # Получаем имена городов для передачи в message_formatter
-    departure_city_name_for_weather = context.user_data.get('departure_city_name')
-    arrival_city_name_for_weather = context.user_data.get('arrival_city_name')
-
-    for item in globally_sorted_flights_with_date:
-        flight = item['flight']
-        original_date_str = item['original_date_str']
-
-        if original_date_str != last_printed_date_str:
-            try:
-                date_obj = datetime.strptime(original_date_str, "%Y-%m-%d")
-                formatted_date_header = f"\n--- 📅 {date_obj.strftime('%d %B %Y (%A)')} ---\n" # Без Markdown
-                flights_message_parts.append(formatted_date_header)
-                last_printed_date_str = original_date_str
-            except ValueError:
-                formatted_date_header = f"\n--- 📅 {original_date_str} ---\n" # Без Markdown
-                flights_message_parts.append(formatted_date_header)
-                last_printed_date_str = original_date_str
-        
-        formatted_flight_msg = await message_formatter.format_flight_details(
-            flight,
-            departure_city_name=departure_city_name_for_weather,
-            arrival_city_name=arrival_city_name_for_weather
-        )
-        flights_message_parts.append(formatted_flight_msg)
-    
-    if flights_message_parts:
-        full_text = "".join(flights_message_parts)
-        if not full_text.strip():
-            await context.bot.send_message(chat_id=chat_id, text=config.MSG_NO_FLIGHTS_FOUND)
+            return config.ASK_SEARCH_OTHER_AIRPORTS # <--- ИЗМЕНЕНИЕ: переход к вопросу о других аэропортах
         else:
-            max_telegram_message_length = 4096
-            for i in range(0, len(full_text), max_telegram_message_length):
-                chunk = full_text[i:i + max_telegram_message_length]
-                try:
-                    await context.bot.send_message(chat_id=chat_id, text=chunk, parse_mode="HTML", disable_web_page_preview=True) # Без parse_mode
-                except Exception as e_send_chunk:
-                    logger.error(f"Не удалось отправить чанк рейсов: {e_send_chunk}")
-                    if i == 0:
-                         await context.bot.send_message(chat_id=chat_id, text="Произошла ошибка при отображении части результатов.")
-    else:
-        await context.bot.send_message(chat_id=chat_id, text=config.MSG_NO_FLIGHTS_FOUND)
+            # Если альтернативный поиск не предлагается, сразу переходим к вопросу о сохранении
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=config.MSG_ASK_SAVE_SEARCH,
+                reply_markup=keyboards.get_save_search_keyboard()
+            )
+            return config.ASK_SAVE_SEARCH_PREFERENCES # <--- ИЗМЕНЕНИЕ: Новый стейт
+    else: # Рейсы найдены
+        await context.bot.send_message(chat_id=chat_id, text=config.MSG_FLIGHTS_FOUND_SEE_BELOW)
+        
+        # ВАША СУЩЕСТВУЮЩАЯ ЛОГИКА ФОРМАТИРОВАНИЯ И ОТПРАВКИ НАЙДЕННЫХ РЕЙСОВ
+        all_flights_with_original_date = []
+        for date_str, flights_list_item in flights_by_date.items(): # Изменил имя переменной, чтобы не конфликтовать
+            for flight_obj in flights_list_item:
+                all_flights_with_original_date.append({'original_date_str': date_str, 'flight': flight_obj})
 
-    await context.bot.send_message(
-        chat_id=chat_id, text="Что дальше?",
-        reply_markup=keyboards.get_yes_no_keyboard(
-            yes_callback="prompt_new_search_type", no_callback="end_search_session",
-            yes_text="✅ Начать новый поиск", no_text="❌ Закончить"
+        globally_sorted_flights_with_date = sorted(all_flights_with_original_date, key=lambda x: helpers.get_flight_price(x['flight']))
+
+        flights_message_parts = []
+        last_printed_date_str = None
+        departure_city_name_for_weather = context.user_data.get('departure_city_name')
+        arrival_city_name_for_weather = context.user_data.get('arrival_city_name')
+
+        for item in globally_sorted_flights_with_date:
+            flight = item['flight']
+            original_date_str = item['original_date_str']
+            if original_date_str != last_printed_date_str:
+                try:
+                    date_obj = datetime.strptime(original_date_str, "%Y-%m-%d")
+                    formatted_date_header = f"\n--- 📅 {date_obj.strftime('%d %B %Y (%A)')} ---\n"
+                    flights_message_parts.append(formatted_date_header)
+                    last_printed_date_str = original_date_str
+                except ValueError:
+                    formatted_date_header = f"\n--- 📅 {original_date_str} ---\n"
+                    flights_message_parts.append(formatted_date_header)
+                    last_printed_date_str = original_date_str
+            
+            formatted_flight_msg = await message_formatter.format_flight_details(
+                flight,
+                departure_city_name=departure_city_name_for_weather,
+                arrival_city_name=arrival_city_name_for_weather
+            )
+            flights_message_parts.append(formatted_flight_msg)
+        
+        if flights_message_parts:
+            full_text = "".join(flights_message_parts)
+            if not full_text.strip(): # Если после форматирования ничего не осталось
+                await context.bot.send_message(chat_id=chat_id, text=config.MSG_NO_FLIGHTS_FOUND) 
+            else:
+                max_telegram_message_length = 4096
+                for i in range(0, len(full_text), max_telegram_message_length):
+                    chunk = full_text[i:i + max_telegram_message_length]
+                    try:
+                        await context.bot.send_message(chat_id=chat_id, text=chunk, parse_mode="HTML", disable_web_page_preview=True)
+                    except Exception as e_send_chunk:
+                        logger.error(f"Не удалось отправить чанк рейсов: {e_send_chunk}")
+                        if i == 0: 
+                             await context.bot.send_message(chat_id=chat_id, text="Произошла ошибка при отображении части результатов.")
+        else: # Если flights_message_parts пуст (маловероятно, если flights_by_date не пуст)
+            await context.bot.send_message(chat_id=chat_id, text=config.MSG_NO_FLIGHTS_FOUND)
+
+        # После отображения результатов - предлагаем сохранить поиск
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=config.MSG_ASK_SAVE_SEARCH,
+            reply_markup=keyboards.get_save_search_keyboard()
         )
-    )
-    return ConversationHandler.END
+        return config.ASK_SAVE_SEARCH_PREFERENCES # <--- ИЗМЕНЕНИЕ: Новый стейт
 
 async def prompt_new_search_type_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
+    if not query: 
+        logger.warning("prompt_new_search_type_callback вызван без query")
+        return
     await query.answer()
     context.user_data.clear()
+
+    user_id = update.effective_user.id
+    has_searches = await user_history.has_saved_searches(user_id) # <--- await
+    main_menu_kbd = keyboards.get_main_menu_keyboard(has_saved_searches=has_searches)
+
+    target_chat_id = query.message.chat_id if query.message else (update.effective_chat.id if update.effective_chat else None)
+
+    if target_chat_id:
+        if query.message: 
+            try:
+                await query.edit_message_text(text=config.MSG_WELCOME, reply_markup=main_menu_kbd)
+            except Exception as e: 
+                logger.warning(f"Не удалось отредактировать сообщение в prompt_new_search_type_callback: {e}")
+                # Если редактирование не удалось, отправляем новое сообщение
+                await context.bot.send_message(chat_id=target_chat_id, text=config.MSG_WELCOME, reply_markup=main_menu_kbd)
+        else: # Если query.message нет (например, сообщение было удалено), отправляем новое
+            await context.bot.send_message(chat_id=target_chat_id, text=config.MSG_WELCOME, reply_markup=main_menu_kbd)
+    else:
+        logger.warning("prompt_new_search_type_callback: не удалось определить чат для ответа.")
+
+# ... (ВАШИ СУЩЕСТВУЮЩИЕ start_search_callback, start_flex_anywhere_callback) ...
+# Они должны быть здесь, как в вашем файле от 1 июня.
+# Я не буду их повторять, но они важны для entry_points.
+# Пример:
+async def start_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if not query: return ConversationHandler.END
+    await query.answer()
+    context.user_data.clear()
+    chat_id_to_send = update.effective_chat.id if update.effective_chat else (query.message.chat_id if query.message else None)
+    if not chat_id_to_send: 
+        logger.error("start_search_callback: chat_id не определен.")
+        return ConversationHandler.END
+
     if query.message:
-      await query.edit_message_text(text=config.MSG_WELCOME, reply_markup=keyboards.get_main_menu_keyboard())
-    elif update.effective_chat:
-      await context.bot.send_message(chat_id=update.effective_chat.id, text=config.MSG_WELCOME, reply_markup=keyboards.get_main_menu_keyboard())
+        try:
+            if query.data == "start_standard_search": await query.edit_message_text(text="Выбран стандартный поиск.")
+            elif query.data == "start_flex_search": await query.edit_message_text(text="Выбран гибкий поиск.")
+        except Exception as e: logger.warning(f"Не удалось отредактировать сообщение в start_search_callback: {e}")
+
+    if query.data == "start_standard_search":
+        await context.bot.send_message(chat_id=chat_id_to_send, text=config.MSG_FLIGHT_TYPE_PROMPT, reply_markup=keyboards.get_flight_type_reply_keyboard())
+        return config.S_SELECTING_FLIGHT_TYPE
+    elif query.data == "start_flex_search":
+        await context.bot.send_message(chat_id=chat_id_to_send, text=config.MSG_FLIGHT_TYPE_PROMPT, reply_markup=keyboards.get_flight_type_reply_keyboard())
+        return config.SELECTING_FLEX_FLIGHT_TYPE
+    elif query.data == "start_flex_anywhere":
+        return await start_flex_anywhere_callback(update, context) # type: ignore
+    return ConversationHandler.END
 
 
 async def end_search_session_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -542,52 +615,52 @@ async def end_search_session_callback(update: Update, context: ContextTypes.DEFA
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data.clear()
-    main_menu_keyboard = keyboards.get_main_menu_keyboard()
-    chat_id = update.effective_chat.id
+    user_id = update.effective_user.id
+    has_searches = await user_history.has_saved_searches(user_id) # <--- await
+    main_menu_keyboard = keyboards.get_main_menu_keyboard(has_saved_searches=has_searches)
+    chat_id = update.effective_chat.id if update.effective_chat else None
     
     image_sent_successfully = False
-    # Пытаемся отправить изображение, если путь к нему указан в конфигурации
     welcome_image_path = getattr(config, 'WELCOME_IMAGE_PATH', None)
 
-    if welcome_image_path and os.path.exists(welcome_image_path):
+    if chat_id and welcome_image_path and os.path.exists(welcome_image_path):
         try:
             with open(welcome_image_path, 'rb') as photo_file:
                 await context.bot.send_photo(chat_id=chat_id, photo=photo_file)
             image_sent_successfully = True
         except Exception as e:
-            # Используйте logger, если он доступен, иначе можно просто проигнорировать ошибку или вывести в print
-            # logger.error(f"Ошибка при отправке приветственного изображения: {e}")
-            print(f"Ошибка при отправке приветственного изображения: {e}") # Замените на logger.error, если logger настроен
+            logger.error(f"Ошибка при отправке приветственного изображения: {e}")
 
-    # Отправка текстового сообщения и клавиатуры
+    if not chat_id: # Если chat_id не удалось определить
+        logger.warning("start_command: не удалось определить chat_id для ответа.")
+        # Можно попытаться извлечь из update.message или update.callback_query, если они есть
+        if update.message: chat_id = update.message.chat_id
+        elif update.callback_query and update.callback_query.message: chat_id = update.callback_query.message.chat_id
+        if not chat_id: return # Если все еще нет, выходим
+
     if update.message:
-        # Изображение (если было) уже отправлено. Теперь отправляем текст.
         await update.message.reply_text(config.MSG_WELCOME, reply_markup=main_menu_keyboard)
     elif update.callback_query:
         await update.callback_query.answer()
-        if update.callback_query.message:
-            if image_sent_successfully:
-                # Если изображение отправлено, нельзя редактировать старое сообщение, чтобы добавить к нему фото.
-                # Отправляем новое сообщение с текстом и клавиатурой.
-                await context.bot.send_message(chat_id=chat_id, text=config.MSG_WELCOME, reply_markup=main_menu_keyboard)
-                # Опционально: удалить сообщение, с которого пришел callback, чтобы не было дублирования
-                try:
-                    await update.callback_query.message.delete()
-                except Exception as e:
-                    # logger.warning(f"Не удалось удалить предыдущее сообщение (callback): {e}")
-                    print(f"Не удалось удалить предыдущее сообщение (callback): {e}") # Замените на logger.warning
-            else:
-                # Изображение не отправлено, пытаемся отредактировать существующее сообщение
-                try:
-                    await update.callback_query.edit_message_text(config.MSG_WELCOME, reply_markup=main_menu_keyboard)
-                except Exception as e:
-                    # logger.warning(f"Не удалось отредактировать сообщение в start_command (callback): {e}")
-                    print(f"Не удалось отредактировать сообщение в start_command (callback): {e}") # Замените на logger.warning
-                    # Если редактирование не удалось, отправляем новое сообщение
-                    await context.bot.send_message(chat_id=chat_id, text=config.MSG_WELCOME, reply_markup=main_menu_keyboard)
+        target_chat_id_cb = update.callback_query.message.chat_id if update.callback_query.message else chat_id # Используем chat_id из сообщения callback'а или ранее определенный
+        if target_chat_id_cb: # Убедимся, что chat_id есть
+            if update.callback_query.message: # Если есть сообщение для редактирования/удаления
+                if image_sent_successfully:
+                    await context.bot.send_message(chat_id=target_chat_id_cb, text=config.MSG_WELCOME, reply_markup=main_menu_keyboard)
+                    try:
+                        await update.callback_query.message.delete()
+                    except Exception as e:
+                        logger.warning(f"Не удалось удалить предыдущее сообщение (callback): {e}")
+                else:
+                    try:
+                        await update.callback_query.edit_message_text(config.MSG_WELCOME, reply_markup=main_menu_keyboard)
+                    except Exception as e:
+                        logger.warning(f"Не удалось отредактировать сообщение в start_command (callback): {e}. Отправка нового.")
+                        await context.bot.send_message(chat_id=target_chat_id_cb, text=config.MSG_WELCOME, reply_markup=main_menu_keyboard)
+            else: # Если у callback_query нет message, просто отправляем новое
+                await context.bot.send_message(chat_id=target_chat_id_cb, text=config.MSG_WELCOME, reply_markup=main_menu_keyboard)
         else:
-            # Если нет update.callback_query.message (маловероятно), отправляем новое сообщение
-            await context.bot.send_message(chat_id=chat_id, text=config.MSG_WELCOME, reply_markup=main_menu_keyboard)
+            logger.warning("start_command (callback): не удалось определить chat_id для ответа.")
 
 
 async def start_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -612,26 +685,41 @@ async def start_search_callback(update: Update, context: ContextTypes.DEFAULT_TY
     return ConversationHandler.END
 
 async def start_flex_anywhere_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    chat_id_to_send = update.effective_chat.id if update.effective_chat else None
+    edited_successfully = False
     if update.callback_query:
         query = update.callback_query
         if query.message:
-            try: await query.edit_message_text(text="Выбран поиск \"Куда угодно\".")
+            chat_id_to_send = query.message.chat_id
+            try: 
+                await query.edit_message_text(text="Выбран поиск \"Куда угодно\".")
+                edited_successfully = True
             except Exception as e: logger.warning(f"Не удалось отредактировать сообщение в start_flex_anywhere_callback: {e}")
-    else:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Выбран поиск \"Куда угодно\".")
+    
+    if not chat_id_to_send:
+        logger.error("start_flex_anywhere_callback: не удалось определить chat_id.")
+        return ConversationHandler.END
+
+    if not edited_successfully and not update.callback_query :
+         await context.bot.send_message(chat_id=chat_id_to_send, text="Выбран поиск \"Куда угодно\".")
 
     context.user_data.clear()
     context.user_data['arrival_airport_iata'] = None
     context.user_data['departure_date'] = None
     context.user_data['return_date'] = None
     context.user_data['current_search_flow'] = config.FLOW_FLEX
-
     await context.bot.send_message(
-        chat_id=update.effective_chat.id,
+        chat_id=chat_id_to_send,
         text=config.MSG_FLIGHT_TYPE_PROMPT,
         reply_markup=keyboards.get_flight_type_reply_keyboard()
     )
     return config.SELECTING_FLEX_FLIGHT_TYPE
+
+# --- ВСЕ ВАШИ СУЩЕСТВУЮЩИЕ ОБРАБОТЧИКИ СОСТОЯНИЙ И "НАЗАД" ДОЛЖНЫ БЫТЬ ЗДЕСЬ ---
+# (standard_flight_type, ..., flex_return_date_selected, back_std_..., back_flex_...)
+# Это тот самый большой блок из ~60-70 функций из вашего файла от 1 июня.
+# Я НЕ МОГУ ИХ ЗДЕСЬ ПОВТОРИТЬ ИЗ-ЗА ОГРАНИЧЕНИЯ ДЛИНЫ.
+# Убедитесь, что они все скопированы сюда из вашего оригинального файла handlers.py.
 
 # --- ОБРАБОТЧИКИ "НАЗАД" ---
 # Стандартный поиск - даты вылета
@@ -2100,147 +2188,144 @@ async def back_flex_ret_date_to_range_handler(update: Update, context: ContextTy
 
 # --- УНИВЕРСАЛЬНЫЕ ОБРАБОТЧИКИ ДЛЯ ЦЕНЫ (ОБНОВЛЕННЫЕ) ---
 async def handle_price_option_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    # ... (код этой функции, как в Части 3 предыдущего ответа) ...
+    # Убедитесь, что все проверки на None для chat_id и message сделаны
     query = update.callback_query
     if not query: return ConversationHandler.END
     await query.answer()
-    choice: PriceChoice = query.data # type: ignore
+    choice: PriceChoice = query.data # type: ignore 
     context.user_data['price_preference_choice'] = choice
     current_flow = context.user_data.get('current_search_flow', config.FLOW_STANDARD)
-
-    next_step_msg = ""
-    next_state: int = ConversationHandler.END
+    effective_chat_id = update.effective_chat.id if update.effective_chat else (query.message.chat_id if query.message else None)
+    if not effective_chat_id:
+        logger.error("handle_price_option_selected: effective_chat_id не определен.")
+        return ConversationHandler.END
 
     if choice == config.CALLBACK_PRICE_CUSTOM:
-        # При выборе "Задать свою цену", добавляем кнопку "Назад" к сообщению о вводе цены
-        back_cb = None
-        if current_flow == config.FLOW_STANDARD:
-            back_cb = config.CB_BACK_PRICE_TO_STD_ARR_CITY_ONEWAY if context.user_data.get('flight_type_one_way') else config.CB_BACK_PRICE_TO_STD_RET_DATE_TWOWAY
-        elif current_flow == config.FLOW_FLEX:
-            back_cb = config.CB_BACK_PRICE_TO_FLEX_FLIGHT_TYPE
-        
-        # Формируем клавиатуру с кнопкой "Назад" для сообщения о вводе кастомной цены
-        custom_price_keyboard_buttons = []
-        if back_cb: # Этот back_cb будет вести НАЗАД ОТ ВЫБОРА ОПЦИИ ЦЕНЫ, а не от ввода.
-                     # Для возврата от ввода цены к выбору опций нужен другой CB_BACK_...
-            # Правильнее: кнопка назад от ввода цены должна вести к выбору опции цены.
-            custom_price_keyboard_buttons.append([InlineKeyboardButton(config.MSG_BACK, callback_data=config.CB_BACK_PRICE_TO_ENTERING_CUSTOM)])
-
-        reply_markup_custom = InlineKeyboardMarkup(custom_price_keyboard_buttons) if custom_price_keyboard_buttons else None
-
+        reply_markup_custom = InlineKeyboardMarkup([[InlineKeyboardButton(config.MSG_BACK, callback_data=config.CB_BACK_PRICE_TO_ENTERING_CUSTOM)]])
         if query.message:
-            try:
-                await query.edit_message_text(text=config.MSG_MAX_PRICE_PROMPT, reply_markup=reply_markup_custom)
-            except Exception:
-                await context.bot.send_message(update.effective_chat.id, config.MSG_MAX_PRICE_PROMPT, reply_markup=reply_markup_custom)
-        else:
-             await context.bot.send_message(update.effective_chat.id, config.MSG_MAX_PRICE_PROMPT, reply_markup=reply_markup_custom)
+            try: await query.edit_message_text(text=config.MSG_MAX_PRICE_PROMPT, reply_markup=reply_markup_custom)
+            except Exception: await context.bot.send_message(effective_chat_id, config.MSG_MAX_PRICE_PROMPT, reply_markup=reply_markup_custom)
+        else: await context.bot.send_message(effective_chat_id, config.MSG_MAX_PRICE_PROMPT, reply_markup=reply_markup_custom)
         return config.ENTERING_CUSTOM_PRICE
-
-    # ... (остальная логика handle_price_option_selected без изменений) ...
     elif choice == config.CALLBACK_PRICE_LOWEST or choice == config.CALLBACK_PRICE_ALL:
         context.user_data['max_price'] = None
+        next_step_msg = ""
         if current_flow == config.FLOW_STANDARD:
             next_step_msg = config.MSG_PRICE_CHOICE_LOWEST_STANDARD if choice == config.CALLBACK_PRICE_LOWEST else config.MSG_PRICE_CHOICE_ALL_STANDARD
             if query.message:
                 try: await query.edit_message_text(text=next_step_msg)
-                except Exception as e_edit:
-                    logger.warning(f"Не удалось изменить сообщение (lowest/all standard): {e_edit}. Отправляю новое.")
-                    await context.bot.send_message(update.effective_chat.id, next_step_msg)
+                except Exception as e: logger.warning(f"Не удалось изменить сообщение: {e}"); await context.bot.send_message(effective_chat_id, next_step_msg)
+            else: await context.bot.send_message(effective_chat_id, next_step_msg)
             return await launch_flight_search(update, context)
         else: # FLOW_FLEX
             next_step_msg = config.MSG_PRICE_CHOICE_SAVED_FLEX
             if query.message:
                 try: await query.edit_message_text(text=next_step_msg)
-                except Exception as e_edit:
-                    logger.warning(f"🛑 Не удалось изменить сообщение (lowest/all flex): {e_edit}. Отправляю новое.")
-                    await context.bot.send_message(update.effective_chat.id, next_step_msg)
-
+                except Exception as e: logger.warning(f"Не удалось изменить сообщение: {e}"); await context.bot.send_message(effective_chat_id, next_step_msg)
+            else: await context.bot.send_message(effective_chat_id, next_step_msg)
             back_cb_for_ask_dep = config.CB_BACK_FLEX_ASK_DEP_TO_PRICE
             await context.bot.send_message(
-                chat_id=update.effective_chat.id,
+                chat_id=effective_chat_id,
                 text=config.MSG_ASK_FLEX_DEPARTURE_AIRPORT_PROMPT,
                 reply_markup=keyboards.get_yes_no_keyboard(
                     yes_callback=config.CALLBACK_PREFIX_FLEX + "ask_dep_yes",
                     no_callback=config.CALLBACK_PREFIX_FLEX + "ask_dep_no",
-                    back_callback_data=back_cb_for_ask_dep
-                )
-            )
+                    back_callback_data=back_cb_for_ask_dep))
             return config.ASK_FLEX_DEPARTURE_AIRPORT
     else:
-        logger.warning(f"🛑 Неизвестный выбор опции цены: {choice}")
+        logger.warning(f"Неизвестный выбор опции цены: {choice}")
         if query.message:
-            try: await query.edit_message_text("🛑 Неизвестный выбор. Попробуйте снова.")
+            try: await query.edit_message_text("Неизвестный выбор. Попробуйте снова.")
             except Exception: pass
         return ConversationHandler.END
 
 
 async def enter_custom_price_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    # ... (код этой функции, как в Части 3 предыдущего ответа) ...
+    # Убедитесь, что все проверки на None для chat_id и message сделаны
     if not update.message or not update.message.text:
-        return config.ENTERING_CUSTOM_PRICE
-
+        if update.message:
+             await update.message.reply_text(config.MSG_INVALID_PRICE_INPUT, 
+                                            reply_markup=keyboards.get_price_options_keyboard())
+        return config.SELECTING_PRICE_OPTION 
     user_input = update.message.text
     price = helpers.validate_price(user_input)
     current_flow = context.user_data.get('current_search_flow', config.FLOW_STANDARD)
-
     if price is None:
-        # При неверном вводе цены, предлагаем снова выбрать опцию, включая "Назад"
-        back_cb = None
+        back_cb_for_price_options = None
         if current_flow == config.FLOW_STANDARD:
-            back_cb = config.CB_BACK_PRICE_TO_STD_ARR_CITY_ONEWAY if context.user_data.get('flight_type_one_way') else config.CB_BACK_PRICE_TO_STD_RET_DATE_TWOWAY
+            back_cb_for_price_options = config.CB_BACK_PRICE_TO_STD_ARR_CITY_ONEWAY if context.user_data.get('flight_type_one_way') else config.CB_BACK_PRICE_TO_STD_RET_DATE_TWOWAY
         elif current_flow == config.FLOW_FLEX:
-            back_cb = config.CB_BACK_PRICE_TO_FLEX_FLIGHT_TYPE
-
+            back_cb_for_price_options = config.CB_BACK_PRICE_TO_FLEX_FLIGHT_TYPE
         await update.message.reply_text(
             config.MSG_INVALID_PRICE_INPUT,
-            reply_markup=keyboards.get_price_options_keyboard(back_callback_data=back_cb) # Передаем "Назад" для выбора опций
-        )
+            reply_markup=keyboards.get_price_options_keyboard(back_callback_data=back_cb_for_price_options))
         return config.SELECTING_PRICE_OPTION
-
     context.user_data['max_price'] = price
     context.user_data['price_preference_choice'] = config.CALLBACK_PRICE_CUSTOM
     await update.message.reply_text(config.MSG_MAX_PRICE_SET_INFO.format(price=price))
-
     if current_flow == config.FLOW_STANDARD:
         return await launch_flight_search(update, context)
     else: # FLOW_FLEX
-        back_cb_for_ask_dep = config.CB_BACK_FLEX_ASK_DEP_TO_PRICE # Назад от вопроса об аэропорте вылета -> к выбору цены
+        back_cb_for_ask_dep = config.CB_BACK_FLEX_ASK_DEP_TO_PRICE
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
             text=config.MSG_ASK_FLEX_DEPARTURE_AIRPORT_PROMPT,
             reply_markup=keyboards.get_yes_no_keyboard(
                 yes_callback=config.CALLBACK_PREFIX_FLEX + "ask_dep_yes",
                 no_callback=config.CALLBACK_PREFIX_FLEX + "ask_dep_no",
-                back_callback_data=back_cb_for_ask_dep
-            )
-        )
+                back_callback_data=back_cb_for_ask_dep))
         return config.ASK_FLEX_DEPARTURE_AIRPORT
 
 # ... (handle_search_other_airports_decision, cancel_handler, error_handler_conv, handle_invalid_price_choice_fallback БЕЗ ИЗМЕНЕНИЙ) ...
-async def handle_search_other_airports_decision(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: # type: ignore
-    query = update.callback_query
-    if not query: return ConversationHandler.END
-    await query.answer()
+# bot/handlers.py
+# ... (после process_and_send_flights) ...
 
-    effective_chat_id = update.effective_chat.id
+async def handle_search_other_airports_decision(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if not query: 
+        logger.warning("handle_search_other_airports_decision вызван без query.")
+        chat_id_fallback = update.effective_chat.id if update.effective_chat else None
+        if chat_id_fallback: # Попытка отправить сообщение об ошибке, если есть куда
+             await context.bot.send_message(chat_id_fallback, config.MSG_ERROR_OCCURRED + " (internal_hsoad).")
+        return ConversationHandler.END # Завершаем, если нет query
+    
+    await query.answer()
+    effective_chat_id = update.effective_chat.id if update.effective_chat else (query.message.chat_id if query.message else None)
+    
+    if not effective_chat_id: # Еще одна проверка на chat_id
+        logger.error("handle_search_other_airports_decision: не удалось определить effective_chat_id.")
+        return ConversationHandler.END
 
     if query.data == config.CALLBACK_YES_OTHER_AIRPORTS:
         departure_country = context.user_data.get('departure_country')
         original_departure_iata = context.user_data.get('departure_airport_iata')
-        
-        # Получаем ИСХОДНЫЙ город прилета для передачи в message_formatter
         original_arrival_city_name_for_weather = context.user_data.get('arrival_city_name')
 
         if not departure_country or not original_departure_iata:
-            msg_no_data = "🤷 Не удалось получить данные для поиска. Начните новый поиск."
-            if query.message: await query.edit_message_text(text=msg_no_data)
+            msg_no_data = "🤷 Не удалось получить данные для поиска по другим аэропортам. Начните новый поиск."
+            # Редактируем сообщение, если оно есть, иначе отправляем новое
+            if query.message: 
+                try: await query.edit_message_text(text=msg_no_data)
+                except Exception: await context.bot.send_message(effective_chat_id, msg_no_data)
             else: await context.bot.send_message(effective_chat_id, msg_no_data)
-            return ConversationHandler.END
+            
+            # Все равно предлагаем сохранить предыдущий (неудачный) поиск
+            await context.bot.send_message(
+                chat_id=effective_chat_id,
+                text=config.MSG_ASK_SAVE_SEARCH,
+                reply_markup=keyboards.get_save_search_keyboard()
+            )
+            return config.ASK_SAVE_SEARCH_PREFERENCES # <--- ИЗМЕНЕНИЕ
 
-        text_searching_alt = f"⏳ Ищу рейсы из других аэропортов в {departure_country}..." # Без Markdown
-        if query.message: await query.edit_message_text(text=text_searching_alt)
-        else: await context.bot.send_message(effective_chat_id, text=text_searching_alt)
-
-        context.user_data["_already_searched_alternatives"] = True
+        text_searching_alt = f"⏳ Ищу рейсы из других аэропортов в {departure_country}..."
+        if query.message: 
+            try: await query.edit_message_text(text=text_searching_alt)
+            except Exception: await context.bot.send_message(effective_chat_id, text_searching_alt) # Отправляем новое, если edit не удался
+        else: await context.bot.send_message(effective_chat_id, text_searching_alt)
+        
+        context.user_data["_already_searched_alternatives"] = True # Флаг, что уже искали
 
         all_airports_in_country = config.COUNTRIES_DATA.get(departure_country, {})
         alternative_airports = {
@@ -2248,146 +2333,132 @@ async def handle_search_other_airports_decision(update: Update, context: Context
         }
 
         if not alternative_airports:
-            no_alt_airports_msg = f"🤷 В стране {departure_country} нет других аэропортов для поиска." # Без Markdown
+            no_alt_airports_msg = f"🤷 В стране {departure_country} нет других аэропортов для поиска."
             await context.bot.send_message(chat_id=effective_chat_id, text=no_alt_airports_msg)
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id, text="Что дальше?",
-                reply_markup=keyboards.get_yes_no_keyboard(
-                    yes_callback="prompt_new_search_type", no_callback="end_search_session",
-                    yes_text="✅ Начать новый поиск", no_text="❌ Закончить"
-                ))
-            return ConversationHandler.END
-
-        original_max_price = context.user_data.get('max_price')
-        price_preference = context.user_data.get('price_preference_choice')
-
-        found_alternative_flights_data = defaultdict(dict)
-        found_any = False
-
-        for current_alternative_city_name, iata_code in alternative_airports.items():
-            logger.info(f"⏳ Поиск из альтернативного аэропорта: {current_alternative_city_name} ({iata_code})")
-            text_checking_alt = f"⏳ Проверяю вылеты из {current_alternative_city_name} ({iata_code})..." # Без Markdown
-            await context.bot.send_message(chat_id=effective_chat_id, text=text_checking_alt)
-
-            flights_from_alt_by_date = await flight_api.find_flights_with_fallback(
-                departure_airport_iata=iata_code,
-                arrival_airport_iata=context.user_data.get('arrival_airport_iata'),
-                departure_date_str=context.user_data.get('departure_date'),
-                max_price=original_max_price,
-                return_date_str=context.user_data.get('return_date'),
-                is_one_way=context.user_data.get('flight_type_one_way', True)
-            )
-            if flights_from_alt_by_date:
-                processed_for_this_airport: Dict[str, list]
-                if price_preference == config.CALLBACK_PRICE_LOWEST:
-                    processed_for_this_airport = helpers.filter_cheapest_flights(flights_from_alt_by_date)
-                else: 
-                    processed_for_this_airport = flights_from_alt_by_date
-                
-                if processed_for_this_airport:
-                    found_any = True
-                    found_alternative_flights_data[f"{current_alternative_city_name} ({iata_code})"] = processed_for_this_airport
-
-        if found_any:
-            alt_flights_final_message_parts = [f"✈️✨ Найдены рейсы из других аэропортов в {departure_country}:\n"] # Без Markdown
-            for source_airport_info, flights_by_sub_date_dict in found_alternative_flights_data.items():
-                if not flights_by_sub_date_dict: continue
-                
-                city_name_for_current_dep_weather = source_airport_info.split('(')[0].strip()
-
-                alt_flights_final_message_parts.append(f"\n✈️ --- ✈️ Из аэропорта: {source_airport_info} ---\n") # Без Markdown
-                
-                sorted_dates_for_airport = sorted(flights_by_sub_date_dict.items())
-
-                for date_key, flights_on_this_date in sorted_dates_for_airport:
-                    try:
-                        date_obj_alt = datetime.strptime(date_key, "%Y-%m-%d")
-                        alt_flights_final_message_parts.append(f"\n--- 📅 {date_obj_alt.strftime('%d %B %Y (%A)')} ---\n") # Без Markdown
-                    except ValueError:
-                        alt_flights_final_message_parts.append(f"\n--- 📅 {date_key} ---\n") # Без Markdown
-                    
-                    for flight_alt in flights_on_this_date:
-                        formatted_flight_msg = await message_formatter.format_flight_details(
-                            flight_alt,
-                            departure_city_name=city_name_for_current_dep_weather,
-                            arrival_city_name=original_arrival_city_name_for_weather
-                        )
-                        alt_flights_final_message_parts.append(formatted_flight_msg)
-                    alt_flights_final_message_parts.append("\n") 
-
-            full_alt_message = "".join(alt_flights_final_message_parts)
-            
-            if len(full_alt_message.strip()) > len(f"✈️✨ Найдены рейсы из других аэропортов в {departure_country}:\n".strip()):
-                for i_alt_msg in range(0, len(full_alt_message), 4096):
-                    chunk_alt = full_alt_message[i_alt_msg:i_alt_msg + 4096]
-                    try:
-                        await context.bot.send_message(chat_id=update.effective_chat.id, text=chunk_alt) # Без parse_mode
-                    except Exception as e_send_alt_chunk:
-                        logger.error(f"Не удалось отправить чанк альтернативных рейсов: {e_send_alt_chunk}")
-                        if i_alt_msg == 0:
-                            await context.bot.send_message(chat_id=update.effective_chat.id, text="Произошла ошибка при отображении части альтернативных результатов.")
-            else:
-                 no_alt_flights_msg = f"🤷 Из других аэропортов в {departure_country} рейсов по вашим критериям не найдено." # Без Markdown
-                 await context.bot.send_message(chat_id=effective_chat_id, text=no_alt_flights_msg)
+            # Здесь не нужно отправлять "Что дальше?", так как переходим к сохранению
         else:
-            no_alt_flights_msg = f"🤷 Из других аэропортов в {departure_country} рейсов по вашим критериям не найдено." # Без Markdown
-            await context.bot.send_message(chat_id=effective_chat_id, text=no_alt_flights_msg)
+            # ВАША СУЩЕСТВУЮЩАЯ ЛОГИКА ПОИСКА И ОТОБРАЖЕНИЯ АЛЬТЕРНАТИВНЫХ РЕЙСОВ
+            # (Как в вашем файле от 1 июня, с той лишь разницей, что после этого блока будет переход к сохранению)
+            original_max_price = context.user_data.get('max_price')
+            price_preference = context.user_data.get('price_preference_choice')
+            found_alternative_flights_data = defaultdict(dict)
+            found_any = False
 
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id, text="Что дальше?",
-            reply_markup=keyboards.get_yes_no_keyboard(
-                yes_callback="prompt_new_search_type", no_callback="end_search_session",
-                yes_text="✅ Начать новый поиск", no_text="❌ Закончить"
-            ))
-        return ConversationHandler.END
+            for current_alternative_city_name, iata_code in alternative_airports.items():
+                logger.info(f"Поиск из альтернативного аэропорта: {current_alternative_city_name} ({iata_code})")
+                text_checking_alt = f"⏳ Проверяю вылеты из {current_alternative_city_name} ({iata_code})..."
+                await context.bot.send_message(chat_id=effective_chat_id, text=text_checking_alt)
+
+                flights_from_alt_by_date = await flight_api.find_flights_with_fallback(
+                    departure_airport_iata=iata_code,
+                    arrival_airport_iata=context.user_data.get('arrival_airport_iata'),
+                    departure_date_str=context.user_data.get('departure_date'),
+                    max_price=original_max_price,
+                    return_date_str=context.user_data.get('return_date'),
+                    is_one_way=context.user_data.get('flight_type_one_way', True)
+                )
+                if flights_from_alt_by_date: 
+                    processed_for_this_airport: Dict[str, list]
+                    if price_preference == config.CALLBACK_PRICE_LOWEST:
+                        processed_for_this_airport = helpers.filter_cheapest_flights(flights_from_alt_by_date)
+                    else: 
+                        processed_for_this_airport = flights_from_alt_by_date
+                    
+                    if processed_for_this_airport: 
+                        found_any = True
+                        found_alternative_flights_data[f"{current_alternative_city_name} ({iata_code})"] = processed_for_this_airport
+            
+            if found_any:
+                alt_flights_final_message_parts = [f"✈️✨ Найдены рейсы из других аэропортов в {departure_country}:\n"]
+                for source_airport_info, flights_by_sub_date_dict_item in found_alternative_flights_data.items(): # Изменено имя переменной
+                    if not flights_by_sub_date_dict_item: continue
+                    
+                    city_name_for_current_dep_weather = source_airport_info.split('(')[0].strip()
+                    alt_flights_final_message_parts.append(f"\n✈️ --- Из аэропорта: {source_airport_info} ---\n")
+                    
+                    sorted_dates_for_airport = sorted(flights_by_sub_date_dict_item.items())
+                    for date_key, flights_on_this_date in sorted_dates_for_airport:
+                        try:
+                            date_obj_alt = datetime.strptime(date_key, "%Y-%m-%d")
+                            alt_flights_final_message_parts.append(f"\n--- 📅 {date_obj_alt.strftime('%d %B %Y (%A)')} ---\n")
+                        except ValueError:
+                            alt_flights_final_message_parts.append(f"\n--- 📅 {date_key} ---\n")
+                        
+                        for flight_alt in flights_on_this_date:
+                            formatted_flight_msg = await message_formatter.format_flight_details(
+                                flight_alt,
+                                departure_city_name=city_name_for_current_dep_weather,
+                                arrival_city_name=original_arrival_city_name_for_weather
+                            )
+                            alt_flights_final_message_parts.append(formatted_flight_msg)
+                        alt_flights_final_message_parts.append("\n") 
+                
+                full_alt_message = "".join(alt_flights_final_message_parts)
+                if len(full_alt_message.strip()) > len(f"✈️✨ Найдены рейсы из других аэропортов в {departure_country}:\n".strip()):
+                    for i_alt_msg in range(0, len(full_alt_message), 4096):
+                        chunk_alt = full_alt_message[i_alt_msg:i_alt_msg + 4096]
+                        try:
+                            await context.bot.send_message(chat_id=effective_chat_id, text=chunk_alt, parse_mode="HTML", disable_web_page_preview=True)
+                        except Exception as e_send_alt_chunk:
+                            logger.error(f"Не удалось отправить чанк альтернативных рейсов: {e_send_alt_chunk}")
+                            if i_alt_msg == 0:
+                                await context.bot.send_message(chat_id=effective_chat_id, text="Произошла ошибка при отображении части альтернативных результатов.")
+                else: 
+                     no_alt_flights_msg = f"🤷 Из других аэропортов в {departure_country} рейсов по вашим критериям не найдено (после форматирования)."
+                     await context.bot.send_message(chat_id=effective_chat_id, text=no_alt_flights_msg)
+            else: # not found_any
+                no_alt_flights_msg = f"🤷 Из других аэропортов в {departure_country} рейсов по вашим критериям не найдено."
+                await context.bot.send_message(chat_id=effective_chat_id, text=no_alt_flights_msg)
 
     elif query.data == config.CALLBACK_NO_OTHER_AIRPORTS:
         msg_cancel_alt_search = "🛑 Понял. Поиск из других аэропортов отменен."
-        if query.message: await query.edit_message_text(text=msg_cancel_alt_search)
+        if query.message: 
+            try: await query.edit_message_text(text=msg_cancel_alt_search)
+            except Exception: await context.bot.send_message(effective_chat_id, msg_cancel_alt_search)
         else: await context.bot.send_message(effective_chat_id, msg_cancel_alt_search)
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id, text="🤷 Что дальше?",
-            reply_markup=keyboards.get_yes_no_keyboard(
-                yes_callback="prompt_new_search_type", no_callback="end_search_session",
-                yes_text="✅ Начать новый поиск", no_text="❌ Закончить"
-            ))
-        return ConversationHandler.END
-
-    return config.ASK_SEARCH_OTHER_AIRPORTS
+    
+    # Вне зависимости от выбора и результатов, предлагаем сохранить исходный поиск
+    await context.bot.send_message(
+        chat_id=effective_chat_id,
+        text=config.MSG_ASK_SAVE_SEARCH,
+        reply_markup=keyboards.get_save_search_keyboard()
+    )
+    return config.ASK_SAVE_SEARCH_PREFERENCES # <--- ИЗМЕНЕНИЕ
 
 
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     message_to_send = config.MSG_CANCELLED
     reply_markup_to_send = ReplyKeyboardRemove()
-    chat_id_to_send = update.effective_chat.id
+    chat_id_to_send = update.effective_chat.id if update.effective_chat else None
     if update.callback_query:
         await update.callback_query.answer()
-        if update.callback_query.message:
-            try: await update.callback_query.edit_message_text(text=message_to_send)
-            except Exception:
-                if chat_id_to_send: await context.bot.send_message(chat_id=chat_id_to_send, text=message_to_send, reply_markup=reply_markup_to_send)
-        elif chat_id_to_send: await context.bot.send_message(chat_id=chat_id_to_send, text=message_to_send, reply_markup=reply_markup_to_send)
+        target_chat_id_cb = update.callback_query.message.chat_id if update.callback_query.message else chat_id_to_send
+        if target_chat_id_cb:
+            if update.callback_query.message:
+                try: await update.callback_query.edit_message_text(text=message_to_send)
+                except Exception: await context.bot.send_message(chat_id=target_chat_id_cb, text=message_to_send, reply_markup=reply_markup_to_send)
+            else: await context.bot.send_message(chat_id=target_chat_id_cb, text=message_to_send, reply_markup=reply_markup_to_send)
     elif update.message and chat_id_to_send:
         await update.message.reply_text(message_to_send, reply_markup=reply_markup_to_send)
+    elif chat_id_to_send:
+        await context.bot.send_message(chat_id=chat_id_to_send, text=message_to_send, reply_markup=reply_markup_to_send)
     context.user_data.clear()
     return ConversationHandler.END
 
 async def error_handler_conv(update: Union[Update, None], context: ContextTypes.DEFAULT_TYPE) -> Union[int, None]:
     logger.error(f"Ошибка в ConversationHandler: {context.error}", exc_info=context.error)
     chat_id_to_send_error = None
-    if update and hasattr(update, 'effective_chat') and update.effective_chat:
+    if update and isinstance(update, Update) and update.effective_chat:
         chat_id_to_send_error = update.effective_chat.id
-
+    elif update and isinstance(update, CallbackQuery) and update.message:
+        chat_id_to_send_error = update.message.chat_id
     if chat_id_to_send_error:
         try:
             await context.bot.send_message(
                 chat_id=chat_id_to_send_error,
                 text=config.MSG_ERROR_OCCURRED + " 🙏 Пожалуйста, попробуйте начать заново с /start.",
-                reply_markup=ReplyKeyboardRemove()
-            )
-        except Exception as e:
-            logger.error(f"🤷 Не удалось отправить сообщение об ошибке пользователю: {e}")
-
+                reply_markup=ReplyKeyboardRemove())
+        except Exception as e: logger.error(f"Не удалось отправить сообщение об ошибке пользователю: {e}")
     if context.user_data: context.user_data.clear()
     return ConversationHandler.END
 
@@ -2395,160 +2466,159 @@ async def handle_invalid_price_choice_fallback(update: Update, context: ContextT
     query = update.callback_query
     if query:
         await query.answer(config.MSG_INVALID_PRICE_CHOICE_FALLBACK, show_alert=True)
+        user_identifier = query.from_user.id if query.from_user else "unknown_user"
+        message_identifier = query.message.message_id if query.message else "unknown_message"
         logger.warning(
-            f"Пользователь {query.from_user.id} нажал кнопку цены '{query.data}' на сообщении "
-            f"{query.message.message_id if query.message else 'unknown'} в несоответствующем состоянии диалога."
-        )
+            f"Пользователь {user_identifier} нажал кнопку цены '{query.data}' на сообщении "
+            f"{message_identifier} в несоответствующем состоянии диалога.")
 
+# ИМПОРТ handlers_saved_search (ПОСЛЕ ВСЕХ ФУНКЦИЙ ЭТОГО ФАЙЛА, ПЕРЕД create_conversation_handler)
+from . import handlers_saved_search
 
-# --- СОЗДАНИЕ CONVERSATIONHANDLER (ОБНОВЛЕННОЕ) ---
-# В файле bot/handlers.py
-
+# --- СОЗДАНИЕ CONVERSATIONHANDLER ---
 def create_conversation_handler() -> ConversationHandler:
-    price_option_pattern = f"^({config.CALLBACK_PRICE_CUSTOM}|{config.CALLBACK_PRICE_LOWEST}|{config.CALLBACK_PRICE_ALL})$" #
-    # Паттерн для отлова любых callback_data, начинающихся с "price_", чтобы обработать их в fallback, если они невалидны для текущего состояния.
-    price_fallback_pattern = r"^price_.*$" #
+    # Обертки
+    async def _handle_save_search_preference_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        return await handlers_saved_search.handle_save_search_preference_callback(update, context, launch_flight_search_func=launch_flight_search) # launch_flight_search передается как есть
+
+    async def _start_last_saved_search_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        return await handlers_saved_search.start_last_saved_search_callback(update, context, launch_flight_search_func=launch_flight_search)
+
+    price_option_pattern = f"^({config.CALLBACK_PRICE_CUSTOM}|{config.CALLBACK_PRICE_LOWEST}|{config.CALLBACK_PRICE_ALL})$"
+    price_fallback_pattern = r"^price_.*$"
 
     conv_handler = ConversationHandler(
         entry_points=[
-            CommandHandler('start', start_command), #
-            CallbackQueryHandler(start_search_callback, pattern='^(start_standard_search|start_flex_search)$'), #
-            CallbackQueryHandler(start_flex_anywhere_callback, pattern='^start_flex_anywhere$') #
+            CommandHandler('start', start_command),
+            CallbackQueryHandler(start_search_callback, pattern='^(start_standard_search|start_flex_search)$'),
+            CallbackQueryHandler(start_flex_anywhere_callback, pattern='^start_flex_anywhere$'),
+            CallbackQueryHandler(_start_last_saved_search_wrapper, pattern=f"^{config.CALLBACK_START_LAST_SAVED_SEARCH}$")
         ],
         states={
             # --- Стандартный поиск ---
-            config.S_SELECTING_FLIGHT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_flight_type)], #
-            config.S_SELECTING_DEPARTURE_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_departure_country)], #
-            config.S_SELECTING_DEPARTURE_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_departure_city)], #
-            config.S_SELECTING_DEPARTURE_YEAR: [ #
-                CallbackQueryHandler(standard_departure_year_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_year_"), #
-                CallbackQueryHandler(back_std_dep_year_to_city_handler, pattern=f"^{config.CB_BACK_STD_DEP_YEAR_TO_CITY}$") #
+            config.S_SELECTING_FLIGHT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_flight_type)],
+            config.S_SELECTING_DEPARTURE_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_departure_country)],
+            config.S_SELECTING_DEPARTURE_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_departure_city)],
+            config.S_SELECTING_DEPARTURE_YEAR: [
+                CallbackQueryHandler(standard_departure_year_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_year_"),
+                CallbackQueryHandler(back_std_dep_year_to_city_handler, pattern=f"^{config.CB_BACK_STD_DEP_YEAR_TO_CITY}$")
             ],
-            config.S_SELECTING_DEPARTURE_MONTH: [ #
-                CallbackQueryHandler(standard_departure_month_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_month_"), #
-                CallbackQueryHandler(back_std_dep_month_to_year_handler, pattern=f"^{config.CB_BACK_STD_DEP_MONTH_TO_YEAR}$") #
+            config.S_SELECTING_DEPARTURE_MONTH: [
+                CallbackQueryHandler(standard_departure_month_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_month_"),
+                CallbackQueryHandler(back_std_dep_month_to_year_handler, pattern=f"^{config.CB_BACK_STD_DEP_MONTH_TO_YEAR}$")
             ],
-            config.S_SELECTING_DEPARTURE_DATE_RANGE: [ #
-                CallbackQueryHandler(standard_departure_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_range_"), #
-                CallbackQueryHandler(back_std_dep_range_to_month_handler, pattern=f"^{config.CB_BACK_STD_DEP_RANGE_TO_MONTH}$") #
+            config.S_SELECTING_DEPARTURE_DATE_RANGE: [
+                CallbackQueryHandler(standard_departure_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_range_"),
+                CallbackQueryHandler(back_std_dep_range_to_month_handler, pattern=f"^{config.CB_BACK_STD_DEP_RANGE_TO_MONTH}$")
             ],
-            config.S_SELECTING_DEPARTURE_DATE: [ #
-                CallbackQueryHandler(standard_departure_date_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_date_"), #
-                CallbackQueryHandler(back_std_dep_date_to_range_handler, pattern=f"^{config.CB_BACK_STD_DEP_DATE_TO_RANGE}$") #
+            config.S_SELECTING_DEPARTURE_DATE: [
+                CallbackQueryHandler(standard_departure_date_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_date_"),
+                CallbackQueryHandler(back_std_dep_date_to_range_handler, pattern=f"^{config.CB_BACK_STD_DEP_DATE_TO_RANGE}$")
             ],
-            config.S_SELECTING_ARRIVAL_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_arrival_country)], #
-            config.S_SELECTING_ARRIVAL_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_arrival_city)], #
-
-            config.S_SELECTING_RETURN_YEAR: [ #
-                CallbackQueryHandler(standard_return_year_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_year_"), #
-                CallbackQueryHandler(back_std_ret_year_to_arr_city_handler, pattern=f"^{config.CB_BACK_STD_RET_YEAR_TO_ARR_CITY}$") #
+            config.S_SELECTING_ARRIVAL_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_arrival_country)],
+            config.S_SELECTING_ARRIVAL_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_arrival_city)],
+            config.S_SELECTING_RETURN_YEAR: [
+                CallbackQueryHandler(standard_return_year_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_year_"),
+                CallbackQueryHandler(back_std_ret_year_to_arr_city_handler, pattern=f"^{config.CB_BACK_STD_RET_YEAR_TO_ARR_CITY}$")
             ],
-            config.S_SELECTING_RETURN_MONTH: [ #
-                CallbackQueryHandler(standard_return_month_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_month_"), #
-                CallbackQueryHandler(back_std_ret_month_to_year_handler, pattern=f"^{config.CB_BACK_STD_RET_MONTH_TO_YEAR}$") #
+            config.S_SELECTING_RETURN_MONTH: [
+                CallbackQueryHandler(standard_return_month_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_month_"),
+                CallbackQueryHandler(back_std_ret_month_to_year_handler, pattern=f"^{config.CB_BACK_STD_RET_MONTH_TO_YEAR}$")
             ],
-            config.S_SELECTING_RETURN_DATE_RANGE: [ #
-                CallbackQueryHandler(standard_return_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_range_"), #
-                CallbackQueryHandler(back_std_ret_range_to_month_handler, pattern=f"^{config.CB_BACK_STD_RET_RANGE_TO_MONTH}$") #
+            config.S_SELECTING_RETURN_DATE_RANGE: [
+                CallbackQueryHandler(standard_return_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_range_"),
+                CallbackQueryHandler(back_std_ret_range_to_month_handler, pattern=f"^{config.CB_BACK_STD_RET_RANGE_TO_MONTH}$")
             ],
-            config.S_SELECTING_RETURN_DATE: [ #
-                CallbackQueryHandler(standard_return_date_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_date_"), #
-                CallbackQueryHandler(back_std_ret_date_to_range_handler, pattern=f"^{config.CB_BACK_STD_RET_DATE_TO_RANGE}$") #
+            config.S_SELECTING_RETURN_DATE: [
+                CallbackQueryHandler(standard_return_date_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_date_"),
+                CallbackQueryHandler(back_std_ret_date_to_range_handler, pattern=f"^{config.CB_BACK_STD_RET_DATE_TO_RANGE}$")
             ],
 
             # --- Гибкий поиск ---
-            config.SELECTING_FLEX_FLIGHT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, flex_flight_type)], #
-            config.ASK_FLEX_DEPARTURE_AIRPORT: [ #
-                CallbackQueryHandler(flex_ask_departure_airport, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ask_dep_"), #
-                CallbackQueryHandler(back_flex_ask_dep_to_price_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_DEP_TO_PRICE}$") #
+            config.SELECTING_FLEX_FLIGHT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, flex_flight_type)],
+            config.ASK_FLEX_DEPARTURE_AIRPORT: [
+                CallbackQueryHandler(flex_ask_departure_airport, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ask_dep_"),
+                CallbackQueryHandler(back_flex_ask_dep_to_price_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_DEP_TO_PRICE}$")
             ],
-            config.SELECTING_FLEX_DEPARTURE_COUNTRY: [ #
-                MessageHandler(filters.TEXT & ~filters.COMMAND, flex_departure_country), #
-                # Кнопка "Назад" для ReplyKeyboard обычно обрабатывается через /cancel или неявный возврат при ошибке
+            config.SELECTING_FLEX_DEPARTURE_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, flex_departure_country)],
+            config.SELECTING_FLEX_DEPARTURE_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, flex_departure_city)],
+            config.ASK_FLEX_ARRIVAL_AIRPORT: [
+                CallbackQueryHandler(flex_ask_arrival_airport, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ask_arr_"),
+                CallbackQueryHandler(back_flex_ask_arr_to_dep_city_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_ARR_TO_DEP_CITY}$")
             ],
-            config.SELECTING_FLEX_DEPARTURE_CITY: [ #
-                MessageHandler(filters.TEXT & ~filters.COMMAND, flex_departure_city), #
+            config.SELECTING_FLEX_ARRIVAL_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, flex_arrival_country)],
+            config.SELECTING_FLEX_ARRIVAL_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, flex_arrival_city)],
+            config.ASK_FLEX_DATES: [
+                CallbackQueryHandler(flex_ask_dates, pattern=f"^(?:{config.CALLBACK_PREFIX_FLEX}ask_dates_yes|{config.CALLBACK_NO_SPECIFIC_DATES})$"),
+                CallbackQueryHandler(back_flex_ask_dates_to_location_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_DATES_TO_ARR_CITY}$"),
+                CallbackQueryHandler(back_flex_ask_dates_to_location_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR}$")
             ],
-            config.ASK_FLEX_ARRIVAL_AIRPORT: [ #
-                CallbackQueryHandler(flex_ask_arrival_airport, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ask_arr_"), #
-                CallbackQueryHandler(back_flex_ask_arr_to_dep_city_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_ARR_TO_DEP_CITY}$") #
+            config.SELECTING_FLEX_DEPARTURE_YEAR: [
+                CallbackQueryHandler(flex_departure_year_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_year_"),
+                CallbackQueryHandler(back_flex_dep_year_to_ask_dates_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES}$")
             ],
-            config.SELECTING_FLEX_ARRIVAL_COUNTRY: [ #
-                MessageHandler(filters.TEXT & ~filters.COMMAND, flex_arrival_country), #
+            config.SELECTING_FLEX_DEPARTURE_MONTH: [
+                CallbackQueryHandler(flex_departure_month_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_month_"),
+                CallbackQueryHandler(back_flex_dep_month_to_year_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_MONTH_TO_YEAR}$")
             ],
-            config.SELECTING_FLEX_ARRIVAL_CITY: [ #
-                MessageHandler(filters.TEXT & ~filters.COMMAND, flex_arrival_city), #
+            config.SELECTING_FLEX_DEPARTURE_DATE_RANGE: [
+                CallbackQueryHandler(flex_departure_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_range_"),
+                CallbackQueryHandler(back_flex_dep_range_to_month_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_RANGE_TO_MONTH}$")
             ],
-            config.ASK_FLEX_DATES: [ #
-                CallbackQueryHandler(flex_ask_dates, pattern=f"^(?:{config.CALLBACK_PREFIX_FLEX}ask_dates_yes|{config.CALLBACK_NO_SPECIFIC_DATES})$"), #
-                CallbackQueryHandler(back_flex_ask_dates_to_location_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_DATES_TO_ARR_CITY}$"), #
-                CallbackQueryHandler(back_flex_ask_dates_to_location_handler, pattern=f"^{config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR}$") #
+            config.SELECTING_FLEX_DEPARTURE_DATE: [
+                CallbackQueryHandler(flex_departure_date_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_date_"),
+                CallbackQueryHandler(back_flex_dep_date_to_range_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_DATE_TO_RANGE}$")
             ],
-            config.SELECTING_FLEX_DEPARTURE_YEAR: [ #
-                CallbackQueryHandler(flex_departure_year_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_year_"), #
-                CallbackQueryHandler(back_flex_dep_year_to_ask_dates_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES}$") #
+            config.SELECTING_FLEX_RETURN_YEAR: [
+                CallbackQueryHandler(flex_return_year_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_year_"),
+                CallbackQueryHandler(back_flex_ret_year_to_dep_date_handler, pattern=f"^{config.CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE}$")
             ],
-            config.SELECTING_FLEX_DEPARTURE_MONTH: [ #
-                CallbackQueryHandler(flex_departure_month_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_month_"), #
-                CallbackQueryHandler(back_flex_dep_month_to_year_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_MONTH_TO_YEAR}$") #
+            config.SELECTING_FLEX_RETURN_MONTH: [
+                CallbackQueryHandler(flex_return_month_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_month_"),
+                CallbackQueryHandler(back_flex_ret_month_to_year_handler, pattern=f"^{config.CB_BACK_FLEX_RET_MONTH_TO_YEAR}$")
             ],
-            config.SELECTING_FLEX_DEPARTURE_DATE_RANGE: [ #
-                CallbackQueryHandler(flex_departure_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_range_"), #
-                CallbackQueryHandler(back_flex_dep_range_to_month_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_RANGE_TO_MONTH}$") #
+            config.SELECTING_FLEX_RETURN_DATE_RANGE: [
+                CallbackQueryHandler(flex_return_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_range_"),
+                CallbackQueryHandler(back_flex_ret_range_to_month_handler, pattern=f"^{config.CB_BACK_FLEX_RET_RANGE_TO_MONTH}$")
             ],
-            config.SELECTING_FLEX_DEPARTURE_DATE: [ #
-                CallbackQueryHandler(flex_departure_date_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_date_"), #
-                CallbackQueryHandler(back_flex_dep_date_to_range_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_DATE_TO_RANGE}$") #
-            ],
-            config.SELECTING_FLEX_RETURN_YEAR: [ #
-                CallbackQueryHandler(flex_return_year_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_year_"), #
-                CallbackQueryHandler(back_flex_ret_year_to_dep_date_handler, pattern=f"^{config.CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE}$") #
-            ],
-            config.SELECTING_FLEX_RETURN_MONTH: [ #
-                CallbackQueryHandler(flex_return_month_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_month_"), #
-                CallbackQueryHandler(back_flex_ret_month_to_year_handler, pattern=f"^{config.CB_BACK_FLEX_RET_MONTH_TO_YEAR}$") #
-            ],
-            config.SELECTING_FLEX_RETURN_DATE_RANGE: [ #
-                CallbackQueryHandler(flex_return_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_range_"), #
-                CallbackQueryHandler(back_flex_ret_range_to_month_handler, pattern=f"^{config.CB_BACK_FLEX_RET_RANGE_TO_MONTH}$") #
-            ],
-            config.SELECTING_FLEX_RETURN_DATE: [ #
-                CallbackQueryHandler(flex_return_date_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_date_"), #
-                CallbackQueryHandler(back_flex_ret_date_to_range_handler, pattern=f"^{config.CB_BACK_FLEX_RET_DATE_TO_RANGE}$") #
+            config.SELECTING_FLEX_RETURN_DATE: [
+                CallbackQueryHandler(flex_return_date_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_date_"),
+                CallbackQueryHandler(back_flex_ret_date_to_range_handler, pattern=f"^{config.CB_BACK_FLEX_RET_DATE_TO_RANGE}$")
             ],
 
             # --- ОБЩИЕ СОСТОЯНИЯ ДЛЯ ЦЕНЫ ---
-            config.SELECTING_PRICE_OPTION: [ #
-                CallbackQueryHandler(handle_price_option_selected, pattern=price_option_pattern), #
-                CallbackQueryHandler(back_price_to_std_arr_city_oneway_handler, pattern=f"^{config.CB_BACK_PRICE_TO_STD_ARR_CITY_ONEWAY}$"), #
-                CallbackQueryHandler(back_price_to_std_ret_date_twoway_handler, pattern=f"^{config.CB_BACK_PRICE_TO_STD_RET_DATE_TWOWAY}$"), #
-                CallbackQueryHandler(back_price_to_flex_flight_type_handler, pattern=f"^{config.CB_BACK_PRICE_TO_FLEX_FLIGHT_TYPE}$"), #
-                CallbackQueryHandler(back_price_to_entering_custom_handler, pattern=f"^{config.CB_BACK_PRICE_TO_ENTERING_CUSTOM}$") #
+            config.SELECTING_PRICE_OPTION: [
+                CallbackQueryHandler(handle_price_option_selected, pattern=price_option_pattern),
+                CallbackQueryHandler(back_price_to_std_arr_city_oneway_handler, pattern=f"^{config.CB_BACK_PRICE_TO_STD_ARR_CITY_ONEWAY}$"),
+                CallbackQueryHandler(back_price_to_std_ret_date_twoway_handler, pattern=f"^{config.CB_BACK_PRICE_TO_STD_RET_DATE_TWOWAY}$"),
+                CallbackQueryHandler(back_price_to_flex_flight_type_handler, pattern=f"^{config.CB_BACK_PRICE_TO_FLEX_FLIGHT_TYPE}$"),
+                CallbackQueryHandler(back_price_to_entering_custom_handler, pattern=f"^{config.CB_BACK_PRICE_TO_ENTERING_CUSTOM}$")
             ],
-            config.ENTERING_CUSTOM_PRICE: [ #
-                MessageHandler(filters.TEXT & ~filters.COMMAND, enter_custom_price_handler), #
-                # "Назад" отсюда обрабатывается при неверном вводе цены, показывая снова опции цены
-                CallbackQueryHandler(back_price_to_entering_custom_handler, pattern=f"^{config.CB_BACK_PRICE_TO_ENTERING_CUSTOM}$") #
+            config.ENTERING_CUSTOM_PRICE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, enter_custom_price_handler),
+                CallbackQueryHandler(back_price_to_entering_custom_handler, pattern=f"^{config.CB_BACK_PRICE_TO_ENTERING_CUSTOM}$")
+            ],
+            config.ASK_SEARCH_OTHER_AIRPORTS: [
+                CallbackQueryHandler(handle_search_other_airports_decision, pattern=f"^{config.CALLBACK_YES_OTHER_AIRPORTS}$|^{config.CALLBACK_NO_OTHER_AIRPORTS}$")
             ],
 
-            config.ASK_SEARCH_OTHER_AIRPORTS: [ #
-                CallbackQueryHandler(handle_search_other_airports_decision, pattern=f"^{config.CALLBACK_YES_OTHER_AIRPORTS}$|^{config.CALLBACK_NO_OTHER_AIRPORTS}$") #
+            # НОВЫЙ СТЕЙТ:
+            config.ASK_SAVE_SEARCH_PREFERENCES: [
+                CallbackQueryHandler(_handle_save_search_preference_wrapper, pattern=f"^{config.CALLBACK_SAVE_SEARCH_YES}$|^{config.CALLBACK_SAVE_SEARCH_NO}$")
             ],
         },
         fallbacks=[
-            CommandHandler('cancel', cancel_handler), #
-            # Отлов "неправильных" нажатий на кнопки цен, если диалог не в том состоянии
-            CallbackQueryHandler(handle_invalid_price_choice_fallback, pattern=price_fallback_pattern), #
-            # Отлов callback_data от неактуальных клавиатур (например, если пользователь долго думал)
-            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_valid_months_error$"), #
-            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_valid_dates_error$"), #
-            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_specific_dates_in_range_error$"), #
-            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_valid_date_ranges_error$"), #
-            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций.", show_alert=True), pattern="^no_dates$"), #
-
+            CommandHandler('cancel', cancel_handler),
+            CallbackQueryHandler(handle_invalid_price_choice_fallback, pattern=price_fallback_pattern),
+            # Ваши существующие fallbacks для невалидных дат и т.д.
+            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций (ошибка валидности месяца).", show_alert=True) if u.callback_query else None, pattern="^no_valid_months_error$"),
+            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций (ошибка валидности дат).", show_alert=True) if u.callback_query else None, pattern="^no_valid_dates_error$"),
+            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций (ошибка диапазона дат).", show_alert=True) if u.callback_query else None, pattern="^no_specific_dates_in_range_error$"),
+            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций (ошибка валидности диапазона).", show_alert=True) if u.callback_query else None, pattern="^no_valid_date_ranges_error$"),
+            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций (нет дат).", show_alert=True) if u.callback_query else None, pattern="^no_dates$"),
         ],
-        map_to_parent={}, #
-        per_message=False, #
-        allow_reentry=True, #
+        map_to_parent={},
+        per_message=False, # Рекомендуется для сложных диалогов, как у вас
+        allow_reentry=True,
     )
     return conv_handler
