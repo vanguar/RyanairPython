@@ -2320,59 +2320,82 @@ async def back_flex_ret_month_to_year_handler(update: Update, context: ContextTy
                    keyboard_back_callback=config.CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE)
     return config.SELECTING_FLEX_RETURN_YEAR
 
-async def back_flex_ret_range_to_month_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def back_flex_ret_range_to_month_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     query = update.callback_query
-    if not query: return ConversationHandler.END
+    if not query:
+        logger.warning("back_flex_ret_range_to_month_handler вызван без query.")
+        return ConversationHandler.END
     await query.answer()
 
-    year = context.user_data.get('return_year') # Это год возврата, должен быть уже установлен
+    # Получаем год возврата, который должен был быть установлен на предыдущем шаге
+    year = context.user_data.get("return_year")
 
-    # Очищаем данные шага, с которого уходим (диапазон дат возврата и конкретная дата возврата)
-    context.user_data.pop('return_date_range_str', None)
-    context.user_data.pop('return_date', None)
-    # Также очищаем явные диапазоны дат возврата, если они были установлены через "выбрать весь диапазон"
-    context.user_data.pop('return_date_from', None)
-    context.user_data.pop('return_date_to', None)
-    context.user_data.pop('is_return_range_search', None) # И флаг поиска по диапазону для возврата
+    # Очищаем данные, связанные с выбором диапазона дат возврата и конкретной датой возврата,
+    # так как пользователь возвращается на шаг выбора месяца возврата.
+    context.user_data.pop("return_date_range_str", None)
+    context.user_data.pop("return_date", None)
+    context.user_data.pop("return_date_from", None)
+    context.user_data.pop("return_date_to", None)
+    context.user_data.pop("is_return_range_search", None)
 
-    if not year: # return_year
-        await query.edit_message_text("❗Ошибка: год возврата не найден. Пожалуйста, начните заново: /start")
+    if not year:
+        logger.warning(
+            "back_flex_ret_range_to_month_handler: return_year не найден в user_data."
+        )
+        await query.edit_message_text("❗Ошибка: год возврата не найден. Пожалуйста, начните поиск заново: /start")
         return ConversationHandler.END
 
-    # --- Корректное получение информации о дате вылета для сравнения ---
-    departure_date_to_validate_str: str | None = None
-    if context.user_data.get('is_departure_range_search', False):
-        departure_date_to_validate_str = context.user_data.get('departure_date_from')
-    else:
-        departure_date_to_validate_str = context.user_data.get('departure_date')
+    # --- Безопасное получение и валидация даты вылета для сравнения ---
+    dep_date_str_for_validation: str | None = None
+    if context.user_data.get("is_departure_range_search", False): # Проверяем, был ли выбран диапазон для даты вылета
+        dep_date_str_for_validation = context.user_data.get("departure_date_from")
+    else: # Иначе пытаемся получить одиночную дату вылета
+        dep_date_str_for_validation = context.user_data.get("departure_date")
 
-    departure_date_obj_for_comparison: datetime | None = None
-    if departure_date_to_validate_str: # Вызываем validate_date_format только если есть строка
-        departure_date_obj_for_comparison = helpers.validate_date_format(departure_date_to_validate_str)
-    
-    # Если departure_date_obj_for_comparison остался None (например, пользователь пропустил выбор даты вылета
-    # или выбрал "без дат" для вылета в гибком поиске), то параметры для сравнения в ask_month будут None.
-    # Функция ask_month должна корректно это обрабатывать (не будет нижнего ограничения для выбора месяца возврата).
+    # Если строка с датой вылета не найдена (ни одиночная, ни начало диапазона)
+    if not dep_date_str_for_validation:
+        logger.warning(
+            "back_flex_ret_range_to_month_handler: Не найдена строка даты вылета (departure_date или departure_date_from)."
+        )
+        await query.edit_message_text("❗Ошибка: дата вылета не определена. Пожалуйста, начните поиск заново: /start")
+        return ConversationHandler.END
 
-    departure_year_for_comp: int | None = None
-    departure_month_for_comp: int | None = None # Это будет использовано как min_departure_month в ask_month
+    # Валидируем полученную строку даты вылета
+    # helpers.validate_date_format теперь должна корректно обрабатывать None, но мы уже проверили dep_date_str_for_validation
+    departure_date_obj_for_comparison = helpers.validate_date_format(
+        dep_date_str_for_validation
+    )
 
-    if departure_date_obj_for_comparison:
-        departure_year_for_comp = departure_date_obj_for_comparison.year
-        # Ограничиваем месяц возврата, только если год возврата совпадает с годом вылета
-        if year == departure_date_obj_for_comparison.year:
-            departure_month_for_comp = departure_date_obj_for_comparison.month
-    # --- Конец корректного получения информации о дате вылета ---
+    # Если дата вылета невалидна после попытки форматирования
+    if not departure_date_obj_for_comparison:
+        logger.warning(
+            f"back_flex_ret_range_to_month_handler: Не удалось валидировать дату вылета: {dep_date_str_for_validation}."
+        )
+        await query.edit_message_text("❗Ошибка: дата вылета некорректна. Пожалуйста, начните поиск заново: /start")
+        return ConversationHandler.END
+    # --- Конец безопасного получения и валидации даты вылета ---
 
+    # Определяем минимально допустимый месяц для возврата:
+    # если год возврата совпадает с годом вылета, то месяц возврата не может быть раньше месяца вылета.
+    # Иначе (если годы разные) можно выбрать любой месяц (начиная с 1-го).
+    min_return_month_for_comparison = (
+        departure_date_obj_for_comparison.month
+        if year == departure_date_obj_for_comparison.year
+        else 1
+    )
+
+    # Запрашиваем у пользователя месяц возврата
     await ask_month(
-        message_or_update_or_query=query, # Передаем query для редактирования сообщения
+        message_or_update_or_query=query, # Передаем query для редактирования исходного сообщения
         context=context,
-        year_for_months=year, # Это год возврата (return_year)
+        year_for_months=year, # Год, для которого выбираем месяц (год возврата)
         message_text=f"Год обратного вылета: {year}. 🗓️ Выберите месяц:",
         callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_month_",
-        departure_year_for_comparison=departure_year_for_comp,
-        departure_month_for_comparison=departure_month_for_comp, # min месяц для возврата, если год совпадает
-        keyboard_back_callback=config.CB_BACK_FLEX_RET_MONTH_TO_YEAR # Кнопка "Назад" к выбору года возврата
+        departure_year_for_comparison=departure_date_obj_for_comparison.year, # Год вылета для сравнения
+        departure_month_for_comparison=min_return_month_for_comparison, # Минимальный месяц вылета для сравнения
+        keyboard_back_callback=config.CB_BACK_FLEX_RET_MONTH_TO_YEAR, # Кнопка "Назад" ведет к выбору года возврата
     )
     return config.SELECTING_FLEX_RETURN_MONTH
 
