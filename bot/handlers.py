@@ -1078,25 +1078,57 @@ async def back_flex_dep_city_to_dep_country_handler(update: Update, context: Con
     )
     return config.SELECTING_FLEX_DEPARTURE_COUNTRY
 
+# bot/handlers.py
 async def back_flex_ask_arr_to_dep_city_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    if not query:
+        logger.warning("back_flex_ask_arr_to_dep_city_handler вызван без query")
+        return ConversationHandler.END
     await query.answer()
-    # Аэропорт прилета еще не выбран/пропущен
+
+    # --- НАЧАЛО ИСПРАВЛЕНИЙ ---
+    # Очищаем ранее выбранный город вылета и его IATA код
+    context.user_data.pop('departure_city_name', None)
+    context.user_data.pop('departure_airport_iata', None)
+    logger.info("Очищены данные о городе вылета при возврате к его выбору.")
+    # --- КОНЕЦ ИСПРАВЛЕНИЙ ---
+
     country = context.user_data.get('departure_country')
     if not country:
-        await query.edit_message_text("Ошибка: страна вылета не найдена для возврата. /start")
+        logger.error("back_flex_ask_arr_to_dep_city_handler: departure_country не найден в user_data.")
+        if query.message:
+            try:
+                await query.edit_message_text("Критическая ошибка: страна вылета не определена. Пожалуйста, начните заново: /start")
+            except Exception as e_edit:
+                logger.error(f"Ошибка редактирования сообщения (страна не найдена): {e_edit}")
         return ConversationHandler.END
-    try:
-        await query.delete_message() # Удаляем сообщение с вопросом об аэропорте прилета
-    except Exception:
-        try: await query.edit_message_text("Возврат к выбору города вылета...")
-        except Exception: pass
 
-    await context.bot.send_message(
-        chat_id=query.message.chat_id,
-        text="Выберите город вылета:",
-        reply_markup=keyboards.get_city_reply_keyboard(country)
-    )
+    # Удаляем сообщение, с которого была нажата кнопка "Назад" (например, "Указать аэропорт прилёта?")
+    if query.message:
+        try:
+            await query.delete_message()
+        except Exception as e_delete:
+            logger.warning(f"Не удалось удалить сообщение в back_flex_ask_arr_to_dep_city_handler: {e_delete}. Попытка редактирования...")
+            try:
+                await query.edit_message_text("Возврат к выбору города вылета...")
+            except Exception as e_edit_fallback:
+                logger.warning(f"Не удалось отредактировать сообщение как fallback: {e_edit_fallback}")
+                # Если и это не удалось, просто продолжаем, пользователь увидит новый запрос ниже
+
+    # Отправляем новый запрос на выбор города с ReplyKeyboardMarkup
+    # Это сообщение появится после предыдущего подтверждения "Город вылета: Berlin.", если оно не было удалено/отредактировано.
+    chat_id_to_send = query.message.chat_id if query.message else update.effective_chat.id
+    if chat_id_to_send:
+        await context.bot.send_message(
+            chat_id=chat_id_to_send,
+            text="🏙️ Выберите город вылета:", # Запрос дублируется визуально, но состояние должно быть сброшено
+            reply_markup=keyboards.get_city_reply_keyboard(country)
+        )
+    else:
+        logger.error("back_flex_ask_arr_to_dep_city_handler: Не удалось определить chat_id для отправки сообщения.")
+        # Можно рассмотреть возврат ConversationHandler.END, если chat_id критичен
+        # и его не удалось получить (хотя из query.message он обычно доступен)
+
     return config.SELECTING_FLEX_DEPARTURE_CITY
 
 async def back_flex_arr_country_to_ask_arr_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
