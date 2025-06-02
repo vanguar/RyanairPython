@@ -2896,28 +2896,129 @@ async def back_flex_ret_range_to_month_handler(
     )
     return config.SELECTING_FLEX_RETURN_MONTH
 
+# bot/handlers.py
 async def back_flex_ret_date_to_range_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    if not query: return ConversationHandler.END
+    if not query:
+        logger.warning("back_flex_ret_date_to_range_handler вызван без query.")
+        return ConversationHandler.END
     await query.answer()
-    year = context.user_data.get('return_year')
-    month = context.user_data.get('return_month')
+
+    # Очищаем данные шага, с которого уходим (выбор конкретной даты возврата)
+    # и связанные с выбором всего диапазона, если он был
     context.user_data.pop('return_date', None)
+    context.user_data.pop('return_date_from', None)
+    context.user_data.pop('return_date_to', None)
+    context.user_data.pop('is_return_range_search', None)
 
-    if not year or not month:
-        await query.edit_message_text("❗Ошибка: год или месяц возврата не найдены. /start")
-        return ConversationHandler.END
+    # 1. Проверка наличия базовых данных для гибкого поиска (аэропорт вылета)
+    if not context.user_data.get('departure_airport_iata') or \
+       not context.user_data.get('current_search_flow') == config.FLOW_FLEX:
+        logger.warning(f"back_flex_ret_date_to_range_handler: Отсутствуют базовые данные. Callback: {query.data}")
+        if query.message:
+            try:
+                await query.edit_message_text(
+                    "Произошла небольшая путаница. Давайте начнем с выбора дат вылета. ✈️",
+                    reply_markup=None
+                )
+            except Exception as e_edit:
+                logger.error(f"Ошибка редактирования (нет базовых данных) в back_flex_ret_date_to_range_handler: {e_edit}")
+        
+        back_cb_ask_dates = config.CB_BACK_FLEX_ASK_DATES_TO_ARR_CITY \
+                            if context.user_data.get('arrival_airport_iata') \
+                            else config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR
+        if query.message and query.message.chat_id:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="🗓️ Указать конкретные даты вылета?",
+                reply_markup=keyboards.get_skip_dates_keyboard(
+                    callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes",
+                    back_callback_data=back_cb_ask_dates
+                )
+            )
+        return config.ASK_FLEX_DATES
 
-    departure_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
-    if not departure_date_obj: # Должна быть всегда, но на всякий случай
-        await query.edit_message_text("❗Ошибка: дата вылета не найдена. /start")
-        return ConversationHandler.END
-    
-    month_name = config.RUSSIAN_MONTHS.get(month, str(month))
-    await ask_date_range(query, context, year, month,
-                       f"Выбран: {month_name} {year}. 📏 Выберите диапазон дат для возврата:",
-                       callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_range_",
-                       keyboard_back_callback=config.CB_BACK_FLEX_RET_RANGE_TO_MONTH)
+    # 2. Получаем год и месяц возврата (должны быть установлены)
+    return_year = context.user_data.get('return_year')
+    return_month = context.user_data.get('return_month')
+
+    if not return_year or not return_month:
+        logger.warning(f"back_flex_ret_date_to_range_handler: Не найден год ({return_year}) или месяц ({return_month}) возврата.")
+        if query.message:
+            try:
+                await query.edit_message_text(
+                    "Не удалось вернуться к выбору диапазона дат, т.к. не определен месяц/год возврата. Давайте выберем год возврата. 📅",
+                    reply_markup=None
+                )
+            except Exception as e_edit: logger.error(f"Ошибка редактирования (нет года/месяца возврата): {e_edit}")
+        
+        # Переводим на шаг выбора года возврата
+        # Нужна дата вылета для кнопки "Назад" в ask_year
+        dep_date_str_for_bk_btn: str | None = None
+        if context.user_data.get("is_departure_range_search", False):
+            dep_date_str_for_bk_btn = context.user_data.get("departure_date_from")
+        else:
+            dep_date_str_for_bk_btn = context.user_data.get("departure_date")
+        
+        # Если dep_date_str_for_bk_btn все еще None, кнопка "Назад" в ask_year может быть не совсем корректной,
+        # но ask_year должен сам обработать ситуацию.
+        # CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE - это кнопка назад от выбора года возврата к выбору даты вылета.
+        # Это подходящий колбэк, если мы хотим вернуться к выбору года возврата.
+        await ask_year(query, context, "🗓️ Выберите год обратного вылета:",
+                       callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_year_",
+                       keyboard_back_callback=config.CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE)
+        return config.SELECTING_FLEX_RETURN_YEAR
+
+    # 3. Получаем дату вылета для передачи в ask_specific_date (хотя ask_date_range её не использует напрямую)
+    # Это больше для консистентности и если бы ask_date_range её требовал для каких-то внутренних проверок.
+    # На самом деле, для ask_date_range дата вылета не нужна для генерации кнопок 1-10, 11-20 и т.д.
+    # Она понадобится на следующем шаге (ask_specific_date).
+    # Здесь важно, чтобы она просто была, чтобы последующие шаги не сломались.
+    dep_date_str_for_validation: str | None = None
+    if context.user_data.get("is_departure_range_search", False):
+        dep_date_str_for_validation = context.user_data.get("departure_date_from")
+    else:
+        dep_date_str_for_validation = context.user_data.get("departure_date")
+
+    if not dep_date_str_for_validation:
+        logger.warning("back_flex_ret_date_to_range_handler: Не найдена дата вылета, необходимая для последующих шагов.")
+        if query.message:
+            try:
+                await query.edit_message_text(
+                    "Похоже, мы пропустили выбор даты вылета. Давайте вернемся к этому шагу. 🛫",
+                    reply_markup=None
+                )
+            except Exception as e_edit: logger.error(f"Ошибка редактирования (нет даты вылета): {e_edit}")
+        
+        await ask_year(query, context, "🗓️ Выберите год вылета:",
+                       callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_year_",
+                       keyboard_back_callback=config.CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES)
+        return config.SELECTING_FLEX_DEPARTURE_YEAR
+        
+    departure_date_obj_check = helpers.validate_date_format(dep_date_str_for_validation)
+    if not departure_date_obj_check:
+        logger.warning(f"back_flex_ret_date_to_range_handler: Невалидная дата вылета: {dep_date_str_for_validation}")
+        if query.message:
+            try:
+                await query.edit_message_text("Дата вылета указана некорректно. Пожалуйста, выберите ее заново.", reply_markup=None)
+            except Exception as e_edit: logger.error(f"Ошибка редактирования (невалидная дата вылета): {e_edit}")
+        
+        await ask_year(query, context, "🗓️ Выберите год вылета:",
+                       callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_year_",
+                       keyboard_back_callback=config.CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES)
+        return config.SELECTING_FLEX_DEPARTURE_YEAR
+
+    # 4. Если все необходимые данные есть, возвращаемся к выбору диапазона дней для возврата
+    month_name = config.RUSSIAN_MONTHS.get(return_month, str(return_month))
+    await ask_date_range(
+        source_update_or_query=query,
+        context=context,
+        year=return_year,
+        month=return_month,
+        message_text=f"Выбран: {month_name} {return_year}. 📏 Выберите диапазон дней для возврата:",
+        callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_range_",
+        keyboard_back_callback=config.CB_BACK_FLEX_RET_RANGE_TO_MONTH # Назад к выбору месяца возврата
+    )
     return config.SELECTING_FLEX_RETURN_DATE_RANGE
 
 # --- УНИВЕРСАЛЬНЫЕ ОБРАБОТЧИКИ ДЛЯ ЦЕНЫ (ОБНОВЛЕННЫЕ) ---
