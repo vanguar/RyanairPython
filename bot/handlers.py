@@ -583,58 +583,6 @@ async def prompt_new_search_type_callback(update: Update, context: ContextTypes.
     else:
         logger.warning("prompt_new_search_type_callback: не удалось определить чат для ответа.")
 
-# ... (ВАШИ СУЩЕСТВУЮЩИЕ start_search_callback, start_flex_anywhere_callback) ...
-# Они должны быть здесь, как в вашем файле от 1 июня.
-# Я не буду их повторять, но они важны для entry_points.
-# Пример:
-async def start_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    if not query: return ConversationHandler.END
-    await query.answer()
-    context.user_data.clear()
-    chat_id_to_send = update.effective_chat.id if update.effective_chat else (query.message.chat_id if query.message else None)
-    if not chat_id_to_send: 
-        logger.error("start_search_callback: chat_id не определен.")
-        return ConversationHandler.END
-
-    if query.message:
-        try:
-            if query.data == "start_standard_search": await query.edit_message_text(text="Выбран стандартный поиск.")
-            elif query.data == "start_flex_search": await query.edit_message_text(text="Выбран гибкий поиск.")
-        except Exception as e: logger.warning(f"Не удалось отредактировать сообщение в start_search_callback: {e}")
-
-    if query.data == "start_standard_search":
-        await context.bot.send_message(chat_id=chat_id_to_send, text=config.MSG_FLIGHT_TYPE_PROMPT, reply_markup=keyboards.get_flight_type_reply_keyboard())
-        return config.S_SELECTING_FLIGHT_TYPE
-    elif query.data == "start_flex_search":
-        await context.bot.send_message(chat_id=chat_id_to_send, text=config.MSG_FLIGHT_TYPE_PROMPT, reply_markup=keyboards.get_flight_type_reply_keyboard())
-        return config.SELECTING_FLEX_FLIGHT_TYPE
-    elif query.data == "start_flex_anywhere":
-        return await start_flex_anywhere_callback(update, context) # type: ignore
-    return ConversationHandler.END
-
-
-async def end_search_session_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    context.user_data.clear()
-
-    donate_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton("💸 Донат в USDT (TRC-20)", url="https://tronscan.org/#/address/TZ6rTYbF5Go94Q4f9uZwcVZ4g3oAnzwDHN")],
-        [InlineKeyboardButton("⚡ Донат в TON", url="https://tonviewer.com/UQB0W1KEAR7RFQ03AIA872jw-2G2ntydiXlyhfTN8rAb2KN5")],
-        [InlineKeyboardButton("✉️ Связаться с автором", url="https://t.me/Criptonius")]
-    ])
-
-    final_text = (
-        "Поиск завершён. Если понадоблюсь — вы знаете, где меня найти! /start\n\n"
-        "☕ Понравился бот? Поддержи проект донатом:"
-    )
-
-    if query.message:
-        await query.edit_message_text(text=final_text, reply_markup=donate_keyboard, parse_mode="HTML")
-    elif update.effective_chat:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=final_text, reply_markup=donate_keyboard, parse_mode="HTML")
-
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data.clear()
@@ -688,23 +636,53 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def start_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    # Проверка, что query существует, добавлена для надежности
+    if not query: 
+        logger.warning("start_search_callback вызван без query.")
+        return ConversationHandler.END
+        
     await query.answer()
-    context.user_data.clear()
+    context.user_data.clear() # Очищаем данные предыдущей сессии
+
+    chat_id_to_send = update.effective_chat.id if update.effective_chat else None
+    if query.message and not chat_id_to_send: # Дополнительное получение chat_id если основной не сработал
+        chat_id_to_send = query.message.chat_id
+    
+    if not chat_id_to_send:
+        logger.error("start_search_callback: не удалось определить chat_id для ответа.")
+        return ConversationHandler.END
 
     if query.message:
         try:
-            if query.data == "start_standard_search": await query.edit_message_text(text="Выбран стандартный поиск.")
-            elif query.data == "start_flex_search": await query.edit_message_text(text="Выбран гибкий поиск.")
-        except Exception as e: logger.warning(f"Не удалось отредактировать сообщение в start_search_callback: {e}")
+            if query.data == "start_standard_search": 
+                await query.edit_message_text(text="Выбран стандартный поиск.")
+            elif query.data == "start_flex_search": 
+                await query.edit_message_text(text="Выбран гибкий поиск.")
+        except Exception as e: 
+            logger.warning(f"Не удалось отредактировать сообщение в start_search_callback: {e}")
+            # Если редактирование не удалось, все равно продолжаем, отправив новое сообщение ниже
 
     if query.data == "start_standard_search":
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=config.MSG_FLIGHT_TYPE_PROMPT, reply_markup=keyboards.get_flight_type_reply_keyboard())
+        context.user_data['current_search_flow'] = config.FLOW_STANDARD # <--- УСТАНАВЛИВАЕМ ТИП ПОТОКА
+        await context.bot.send_message(
+            chat_id=chat_id_to_send, 
+            text=config.MSG_FLIGHT_TYPE_PROMPT, 
+            reply_markup=keyboards.get_flight_type_reply_keyboard()
+        )
         return config.S_SELECTING_FLIGHT_TYPE
     elif query.data == "start_flex_search":
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=config.MSG_FLIGHT_TYPE_PROMPT, reply_markup=keyboards.get_flight_type_reply_keyboard())
+        context.user_data['current_search_flow'] = config.FLOW_FLEX # <--- УСТАНАВЛИВАЕМ ТИП ПОТОКА
+        await context.bot.send_message(
+            chat_id=chat_id_to_send, 
+            text=config.MSG_FLIGHT_TYPE_PROMPT, 
+            reply_markup=keyboards.get_flight_type_reply_keyboard()
+        )
         return config.SELECTING_FLEX_FLIGHT_TYPE
     elif query.data == "start_flex_anywhere":
-        return await start_flex_anywhere_callback(update, context)
+        # current_search_flow устанавливается внутри start_flex_anywhere_callback
+        return await start_flex_anywhere_callback(update, context) # type: ignore
+        
+    logger.warning(f"start_search_callback: неизвестные данные query.data: {query.data}")
     return ConversationHandler.END
 
 async def start_flex_anywhere_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
