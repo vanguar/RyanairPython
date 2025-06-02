@@ -2472,16 +2472,16 @@ async def enter_custom_price_handler(update: Update, context: ContextTypes.DEFAU
 
 async def handle_search_other_airports_decision(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    if not query: 
+    if not query:
         logger.warning("handle_search_other_airports_decision вызван без query.")
         chat_id_fallback = update.effective_chat.id if update.effective_chat else None
         if chat_id_fallback: # Попытка отправить сообщение об ошибке, если есть куда
              await context.bot.send_message(chat_id_fallback, config.MSG_ERROR_OCCURRED + " (internal_hsoad).")
         return ConversationHandler.END # Завершаем, если нет query
-    
+
     await query.answer()
     effective_chat_id = update.effective_chat.id if update.effective_chat else (query.message.chat_id if query.message else None)
-    
+
     if not effective_chat_id: # Еще одна проверка на chat_id
         logger.error("handle_search_other_airports_decision: не удалось определить effective_chat_id.")
         return ConversationHandler.END
@@ -2489,29 +2489,63 @@ async def handle_search_other_airports_decision(update: Update, context: Context
     if query.data == config.CALLBACK_YES_OTHER_AIRPORTS:
         departure_country = context.user_data.get('departure_country')
         original_departure_iata = context.user_data.get('departure_airport_iata')
-        original_arrival_city_name_for_weather = context.user_data.get('arrival_city_name')
+        # original_arrival_city_name_for_weather уже получаем ниже, перед циклом
+
+        # --- НАЧАЛО ИЗМЕНЕНИЙ: Получение всех параметров дат ---
+        # Эти параметры должны быть уже в context.user_data после первоначального выбора пользователя
+        user_max_price: Union[Decimal, None] = context.user_data.get('max_price')
+        price_preference: Union[config.PriceChoice, None] = context.user_data.get('price_preference_choice')
+        is_one_way: bool = context.user_data.get('flight_type_one_way', True)
+
+        # Даты вылета из user_data (аналогично как в launch_flight_search)
+        single_dep_date_str: Union[str, None] = context.user_data.get('departure_date')
+        is_dep_range_search: bool = context.user_data.get('is_departure_range_search', False)
+        explicit_dep_date_from_orig: Union[str, None] = context.user_data.get('departure_date_from')
+        explicit_dep_date_to_orig: Union[str, None] = context.user_data.get('departure_date_to')
+
+        # Определяем, какие параметры дат вылета передавать в find_flights_with_fallback
+        dep_date_for_offset_or_year_search_alt = single_dep_date_str if not is_dep_range_search else None
+        explicit_dep_date_from_alt = explicit_dep_date_from_orig if is_dep_range_search else None
+        explicit_dep_date_to_alt = explicit_dep_date_to_orig if is_dep_range_search else None
+
+        # Даты возврата из user_data (аналогично как в launch_flight_search)
+        single_ret_date_str: Union[str, None] = None
+        is_ret_range_search: bool = False
+        explicit_ret_date_from_orig: Union[str, None] = None
+        explicit_ret_date_to_orig: Union[str, None] = None
+        ret_date_for_offset_search_alt = None
+
+        if not is_one_way:
+            single_ret_date_str = context.user_data.get('return_date')
+            is_ret_range_search = context.user_data.get('is_return_range_search', False)
+            explicit_ret_date_from_orig = context.user_data.get('return_date_from')
+            explicit_ret_date_to_orig = context.user_data.get('return_date_to')
+            ret_date_for_offset_search_alt = single_ret_date_str if not is_ret_range_search else None
+        
+        # Определяем, какие параметры дат возврата передавать
+        explicit_ret_date_from_alt = explicit_ret_date_from_orig if not is_one_way and is_ret_range_search else None
+        explicit_ret_date_to_alt = explicit_ret_date_to_orig if not is_one_way and is_ret_range_search else None
+        # --- КОНЕЦ ИЗМЕНЕНИЙ: Получение всех параметров дат ---
 
         if not departure_country or not original_departure_iata:
             msg_no_data = "🤷 Не удалось получить данные для поиска по другим аэропортам. Начните новый поиск."
-            # Редактируем сообщение, если оно есть, иначе отправляем новое
-            if query.message: 
+            if query.message:
                 try: await query.edit_message_text(text=msg_no_data)
                 except Exception: await context.bot.send_message(effective_chat_id, msg_no_data)
             else: await context.bot.send_message(effective_chat_id, msg_no_data)
             
-            # Все равно предлагаем сохранить предыдущий (неудачный) поиск
             await context.bot.send_message(
                 chat_id=effective_chat_id,
                 text=config.MSG_ASK_SAVE_SEARCH,
                 reply_markup=keyboards.get_save_search_keyboard()
             )
-            return config.ASK_SAVE_SEARCH_PREFERENCES # <--- ИЗМЕНЕНИЕ
+            return config.ASK_SAVE_SEARCH_PREFERENCES
 
         text_searching_alt = f"⏳ Ищу рейсы из других аэропортов в {departure_country}..."
-        if query.message: 
+        if query.message:
             try: await query.edit_message_text(text=text_searching_alt)
-            except Exception: await context.bot.send_message(effective_chat_id, text_searching_alt) # Отправляем новое, если edit не удался
-        else: await context.bot.send_message(effective_chat_id, text_searching_alt)
+            except Exception: await context.bot.send_message(effective_chat_id, text=text_searching_alt)
+        else: await context.bot.send_message(effective_chat_id, text=text_searching_alt)
         
         context.user_data["_already_searched_alternatives"] = True # Флаг, что уже искали
 
@@ -2523,28 +2557,42 @@ async def handle_search_other_airports_decision(update: Update, context: Context
         if not alternative_airports:
             no_alt_airports_msg = f"🤷 В стране {departure_country} нет других аэропортов для поиска."
             await context.bot.send_message(chat_id=effective_chat_id, text=no_alt_airports_msg)
-            # Здесь не нужно отправлять "Что дальше?", так как переходим к сохранению
+            # Переход к сохранению будет ниже, вне этого else
         else:
-            # ВАША СУЩЕСТВУЮЩАЯ ЛОГИКА ПОИСКА И ОТОБРАЖЕНИЯ АЛЬТЕРНАТИВНЫХ РЕЙСОВ
-            # (Как в вашем файле от 1 июня, с той лишь разницей, что после этого блока будет переход к сохранению)
-            original_max_price = context.user_data.get('max_price')
-            price_preference = context.user_data.get('price_preference_choice')
-            found_alternative_flights_data = defaultdict(dict)
+            # Используем defaultdict(dict), если flights_from_alt_by_date это Dict[str, list]
+            # и мы хотим хранить {airport_key: {date_key: [flights]}}
+            # В вашем коде found_alternative_flights_data[key] = processed_for_this_airport,
+            # где processed_for_this_airport это Dict[str, list]. Значит тип правильный.
+            found_alternative_flights_data: Dict[str, Dict[str, list]] = defaultdict(dict)
             found_any = False
+            original_arrival_city_name_for_weather = context.user_data.get('arrival_city_name') # Для погоды
 
             for current_alternative_city_name, iata_code in alternative_airports.items():
                 logger.info(f"Поиск из альтернативного аэропорта: {current_alternative_city_name} ({iata_code})")
                 text_checking_alt = f"⏳ Проверяю вылеты из {current_alternative_city_name} ({iata_code})..."
                 await context.bot.send_message(chat_id=effective_chat_id, text=text_checking_alt)
 
-                flights_from_alt_by_date = await flight_api.find_flights_with_fallback(
-                    departure_airport_iata=iata_code,
-                    arrival_airport_iata=context.user_data.get('arrival_airport_iata'),
-                    departure_date_str=context.user_data.get('departure_date'),
-                    max_price=original_max_price,
-                    return_date_str=context.user_data.get('return_date'),
-                    is_one_way=context.user_data.get('flight_type_one_way', True)
+                # --- ИЗМЕНЕННЫЙ ВЫЗОВ find_flights_with_fallback ---
+                flights_from_alt_by_date: Dict[str, list] = await flight_api.find_flights_with_fallback(
+                    departure_airport_iata=iata_code, # Новый аэропорт вылета
+                    arrival_airport_iata=context.user_data.get('arrival_airport_iata'), # Оригинальный аэропорт прилета
+                    
+                    # Параметры для +/- offset или годового поиска (будут None если был явный диапазон)
+                    departure_date_str=dep_date_for_offset_or_year_search_alt,
+                    return_date_str=ret_date_for_offset_search_alt,
+                    
+                    max_price=user_max_price,
+                    is_one_way=is_one_way,
+                    
+                    # Параметры для явного диапазона дат
+                    explicit_departure_date_from=explicit_dep_date_from_alt,
+                    explicit_departure_date_to=explicit_dep_date_to_alt,
+                    explicit_return_date_from=explicit_ret_date_from_alt,
+                    explicit_return_date_to=explicit_ret_date_to_alt
+                    # search_days_offset можно оставить по умолчанию, если не нужно менять
                 )
+                # --- КОНЕЦ ИЗМЕНЕННОГО ВЫЗОВА ---
+                
                 if flights_from_alt_by_date: 
                     processed_for_this_airport: Dict[str, list]
                     if price_preference == config.CALLBACK_PRICE_LOWEST:
@@ -2554,16 +2602,19 @@ async def handle_search_other_airports_decision(update: Update, context: Context
                     
                     if processed_for_this_airport: 
                         found_any = True
+                        # Ключ - информация об аэропорте, значение - словарь {дата: [рейсы]}
                         found_alternative_flights_data[f"{current_alternative_city_name} ({iata_code})"] = processed_for_this_airport
             
+            # Оригинальная логика отображения найденных альтернативных рейсов
             if found_any:
                 alt_flights_final_message_parts = [f"✈️✨ Найдены рейсы из других аэропортов в {departure_country}:\n"]
-                for source_airport_info, flights_by_sub_date_dict_item in found_alternative_flights_data.items(): # Изменено имя переменной
+                for source_airport_info, flights_by_sub_date_dict_item in found_alternative_flights_data.items():
                     if not flights_by_sub_date_dict_item: continue
                     
                     city_name_for_current_dep_weather = source_airport_info.split('(')[0].strip()
                     alt_flights_final_message_parts.append(f"\n✈️ --- Из аэропорта: {source_airport_info} ---\n")
                     
+                    # Сортируем даты для каждого аэропорта
                     sorted_dates_for_airport = sorted(flights_by_sub_date_dict_item.items())
                     for date_key, flights_on_this_date in sorted_dates_for_airport:
                         try:
@@ -2575,21 +2626,21 @@ async def handle_search_other_airports_decision(update: Update, context: Context
                         for flight_alt in flights_on_this_date:
                             formatted_flight_msg = await message_formatter.format_flight_details(
                                 flight_alt,
-                                departure_city_name=city_name_for_current_dep_weather,
-                                arrival_city_name=original_arrival_city_name_for_weather
+                                departure_city_name=city_name_for_current_dep_weather, # Используем текущий альтернативный город вылета
+                                arrival_city_name=original_arrival_city_name_for_weather # Оригинальный город прилета
                             )
                             alt_flights_final_message_parts.append(formatted_flight_msg)
-                        alt_flights_final_message_parts.append("\n") 
+                        alt_flights_final_message_parts.append("\n") # Добавляем пустую строку после рейсов на одну дату
                 
                 full_alt_message = "".join(alt_flights_final_message_parts)
                 if len(full_alt_message.strip()) > len(f"✈️✨ Найдены рейсы из других аэропортов в {departure_country}:\n".strip()):
-                    for i_alt_msg in range(0, len(full_alt_message), 4096):
+                    for i_alt_msg in range(0, len(full_alt_message), 4096): # 4096 - лимит длины сообщения Telegram
                         chunk_alt = full_alt_message[i_alt_msg:i_alt_msg + 4096]
                         try:
                             await context.bot.send_message(chat_id=effective_chat_id, text=chunk_alt, parse_mode="HTML", disable_web_page_preview=True)
                         except Exception as e_send_alt_chunk:
                             logger.error(f"Не удалось отправить чанк альтернативных рейсов: {e_send_alt_chunk}")
-                            if i_alt_msg == 0:
+                            if i_alt_msg == 0: # Если это первый чанк и он не отправился
                                 await context.bot.send_message(chat_id=effective_chat_id, text="Произошла ошибка при отображении части альтернативных результатов.")
                 else: 
                      no_alt_flights_msg = f"🤷 Из других аэропортов в {departure_country} рейсов по вашим критериям не найдено (после форматирования)."
@@ -2611,7 +2662,7 @@ async def handle_search_other_airports_decision(update: Update, context: Context
         text=config.MSG_ASK_SAVE_SEARCH,
         reply_markup=keyboards.get_save_search_keyboard()
     )
-    return config.ASK_SAVE_SEARCH_PREFERENCES # <--- ИЗМЕНЕНИЕ
+    return config.ASK_SAVE_SEARCH_PREFERENCES
 
 
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
