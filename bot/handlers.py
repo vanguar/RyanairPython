@@ -2267,38 +2267,92 @@ async def back_flex_dep_date_to_range_handler(update: Update, context: ContextTy
                        keyboard_back_callback=config.CB_BACK_FLEX_DEP_RANGE_TO_MONTH)
     return config.SELECTING_FLEX_DEPARTURE_DATE_RANGE
 
+# bot/handlers.py
 async def back_flex_ret_year_to_dep_date_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    if not query: return ConversationHandler.END
+    if not query:
+        logger.warning("back_flex_ret_year_to_dep_date_handler вызван без query.")
+        return ConversationHandler.END
     await query.answer()
+
+    # Очищаем данные, связанные с выбором дат возврата, так как мы уходим с этого этапа
     context.user_data.pop('return_year', None)
     context.user_data.pop('return_month', None)
     context.user_data.pop('return_date_range_str', None)
     context.user_data.pop('return_date', None)
+    context.user_data.pop('return_date_from', None)
+    context.user_data.pop('return_date_to', None)
+    context.user_data.pop('is_return_range_search', None)
 
-    # Возвращаемся к этапу выбора конкретной даты вылета
-    year = context.user_data.get('departure_year')
-    month = context.user_data.get('departure_month')
-    range_str = context.user_data.get('departure_date_range_str')
+    # Пытаемся получить данные, необходимые для возврата к выбору конкретной даты вылета
+    dep_year = context.user_data.get('departure_year')
+    dep_month = context.user_data.get('departure_month')
+    dep_range_str = context.user_data.get('departure_date_range_str')
 
-    if not (year and month and range_str):
-        await query.edit_message_text("🛑 Не удалось восстановить предыдущий шаг выбора даты вылета. /start")
-        return ConversationHandler.END
-    try:
-        start_day, end_day = map(int, range_str.split('-'))
-    except ValueError:
-        await query.edit_message_text("❗Ошибка в данных диапазона дат вылета. /start")
-        return ConversationHandler.END
+    if dep_year and dep_month and dep_range_str:
+        # Если все данные для выбора конкретной даты вылета есть, действуем как раньше
+        try:
+            start_day, end_day = map(int, dep_range_str.split('-'))
+        except ValueError:
+            logger.error(f"Ошибка парсинга departure_date_range_str ('{dep_range_str}') в back_flex_ret_year_to_dep_date_handler")
+            await query.edit_message_text("❗Произошла ошибка с данными о диапазоне дат вылета. Пожалуйста, начните заново: /start")
+            return ConversationHandler.END
 
-    min_date_for_dep = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    month_name_rus = config.RUSSIAN_MONTHS.get(month, str(month))
-    await ask_specific_date(query, context, year, month, start_day, end_day,
-                            f"Диапазон: {start_day}-{end_day} {month_name_rus}. 🗓️ Выберите дату вылета:",
-                            callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_date_",
-                            min_allowed_date_for_comparison=min_date_for_dep,
-                            keyboard_back_callback=config.CB_BACK_FLEX_DEP_DATE_TO_RANGE,
-                            range_selection_type="dep")
-    return config.SELECTING_FLEX_DEPARTURE_DATE
+        min_date_for_dep = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        month_name_rus = config.RUSSIAN_MONTHS.get(dep_month, str(dep_month))
+        
+        await query.edit_message_text( # Редактируем текущее сообщение (от кнопки "Назад")
+            text=f"Возврат к выбору даты вылета. Диапазон: {start_day}-{end_day} {month_name_rus} {dep_year}."
+        )
+        await ask_specific_date( # Отправляем новую клавиатуру для выбора конкретной даты
+            source_update_or_query=query, # query содержит message для edit_message_text в ask_specific_date
+            context=context, 
+            year=dep_year, 
+            month=dep_month, 
+            range_start=start_day, 
+            range_end=end_day,
+            message_text=f"Диапазон: {start_day}-{end_day} {month_name_rus} {dep_year}. 🗓️ Выберите дату вылета:",
+            callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_date_",
+            min_allowed_date_for_comparison=min_date_for_dep,
+            keyboard_back_callback=config.CB_BACK_FLEX_DEP_DATE_TO_RANGE, # Назад к выбору диапазона дней вылета
+            range_selection_type="dep"
+        )
+        return config.SELECTING_FLEX_DEPARTURE_DATE
+    else:
+        # Если данных для возврата к выбору конкретной даты вылета нет,
+        # это значит, что пользователь, вероятно, еще не дошел до этапа выбора дат вылета вообще.
+        # Перенаправляем его на самый первый шаг выбора дат вылета - вопрос "Указать конкретные даты?".
+        logger.warning(
+            f"back_flex_ret_year_to_dep_date_handler: Отсутствуют данные для восстановления шага выбора даты вылета "
+            f"(dep_year: {dep_year}, dep_month: {dep_month}, dep_range_str: {dep_range_str}). "
+            f"Callback: {query.data}. UserData: {context.user_data}"
+        )
+        
+        try:
+            await query.edit_message_text(
+                "Произошла небольшая путаница. Давайте определимся с датами вылета. ✈️",
+                reply_markup=None # Убираем старую клавиатуру
+            )
+        except Exception as e_edit:
+            logger.error(f"Ошибка редактирования сообщения в back_flex_ret_year_to_dep_date_handler (нет данных о дате вылета): {e_edit}")
+
+        # Определяем правильную кнопку "Назад" для шага ASK_FLEX_DATES
+        # Это нужно, чтобы кнопка "Назад" на следующем шаге была корректной
+        back_cb_ask_dates = config.CB_BACK_FLEX_ASK_DATES_TO_ARR_CITY \
+                            if context.user_data.get('arrival_airport_iata') \
+                            else config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR
+        
+        # Убедимся, что query.message существует для chat_id
+        if query.message and query.message.chat_id:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="🗓️ Указать конкретные даты вылета?", # Сообщение для ASK_FLEX_DATES
+                reply_markup=keyboards.get_skip_dates_keyboard(
+                    callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes",
+                    back_callback_data=back_cb_ask_dates
+                )
+            )
+        return config.ASK_FLEX_DATES # Возвращаем на самый ранний этап запроса дат вылета
 
 async def back_flex_ret_month_to_year_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
