@@ -584,6 +584,28 @@ async def prompt_new_search_type_callback(update: Update, context: ContextTypes.
         logger.warning("prompt_new_search_type_callback: не удалось определить чат для ответа.")
 
 
+async def end_search_session_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    context.user_data.clear()
+
+    donate_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton("💸 Донат в USDT (TRC-20)", url="https://tronscan.org/#/address/TZ6rTYbF5Go94Q4f9uZwcVZ4g3oAnzwDHN")],
+        [InlineKeyboardButton("⚡ Донат в TON", url="https://tonviewer.com/UQB0W1KEAR7RFQ03AIA872jw-2G2ntydiXlyhfTN8rAb2KN5")],
+        [InlineKeyboardButton("✉️ Связаться с автором", url="https://t.me/Criptonius")]
+    ])
+
+    final_text = (
+        "Поиск завершён. Если понадоблюсь — вы знаете, где меня найти! /start\n\n"
+        "☕ Понравился бот? Поддержи проект донатом:"
+    )
+
+    if query.message:
+        await query.edit_message_text(text=final_text, reply_markup=donate_keyboard, parse_mode="HTML")
+    elif update.effective_chat:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=final_text, reply_markup=donate_keyboard, parse_mode="HTML")
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data.clear()
     user_id = update.effective_user.id
