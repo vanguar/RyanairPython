@@ -267,12 +267,17 @@ async def ask_date_range(source_update_or_query: Union[Update, CallbackQuery, An
 
 # В файле /app/bot/handlers.py
 
+# В файле /app/bot/handlers.py
+
 async def ask_specific_date(source_update_or_query: Union[Update, CallbackQuery, Any], # Тип параметра обновлен
                             context: ContextTypes.DEFAULT_TYPE,
                             year: int, month: int, range_start: int, range_end: int,
                             message_text: str, callback_prefix: str = "",
                             min_allowed_date_for_comparison: Union[datetime, None] = None,
-                            keyboard_back_callback: str | None = None):
+                            keyboard_back_callback: str | None = None,
+                            # ДОБАВЬТЕ ЭТОТ ПАРАМЕТР:
+                            range_selection_type: str = "dep" # "dep" или "ret" - значение по умолчанию "dep"
+                           ):
     """
     Редактирует сообщение, предлагая выбрать конкретную дату.
     Ожидает, что source_update_or_query содержит CallbackQuery.
@@ -305,11 +310,12 @@ async def ask_specific_date(source_update_or_query: Union[Update, CallbackQuery,
             await context.bot.send_message(
                 chat_id=effective_chat_id,
                 text=message_text,
-                reply_markup=keyboards.generate_specific_date_buttons(
+                reply_markup=keyboards.generate_specific_date_buttons( # <--- ЗДЕСЬ ПЕРЕДАЕМ range_selection_type
                     year, month, range_start, range_end,
                     callback_prefix=callback_prefix,
                     min_allowed_date=min_allowed_date_for_comparison,
-                    back_callback_data=keyboard_back_callback
+                    back_callback_data=keyboard_back_callback,
+                    range_selection_type=range_selection_type # <--- ПЕРЕДАЧА НОВОГО ПАРАМЕТРА
                 )
             )
             logger.info("ask_specific_date: Отправлено новое сообщение вместо редактирования.")
@@ -318,11 +324,12 @@ async def ask_specific_date(source_update_or_query: Union[Update, CallbackQuery,
     try:
         await query_to_edit.edit_message_text(
             text=message_text,
-            reply_markup=keyboards.generate_specific_date_buttons(
+            reply_markup=keyboards.generate_specific_date_buttons( # <--- И ЗДЕСЬ ПЕРЕДАЕМ range_selection_type
                 year, month, range_start, range_end,
                 callback_prefix=callback_prefix,
                 min_allowed_date=min_allowed_date_for_comparison,
-                back_callback_data=keyboard_back_callback
+                back_callback_data=keyboard_back_callback,
+                range_selection_type=range_selection_type # <--- ПЕРЕДАЧА НОВОГО ПАРАМЕТРА
             )
         )
     except Exception as e:
@@ -332,11 +339,12 @@ async def ask_specific_date(source_update_or_query: Union[Update, CallbackQuery,
                 await context.bot.send_message(
                     chat_id=query_to_edit.message.chat_id,
                     text=message_text,
-                    reply_markup=keyboards.generate_specific_date_buttons(
+                    reply_markup=keyboards.generate_specific_date_buttons( # <--- И ЗДЕСЬ ПЕРЕДАЕМ range_selection_type
                         year, month, range_start, range_end,
                         callback_prefix=callback_prefix,
                         min_allowed_date=min_allowed_date_for_comparison,
-                        back_callback_data=keyboard_back_callback
+                        back_callback_data=keyboard_back_callback,
+                        range_selection_type=range_selection_type # <--- ПЕРЕДАЧА НОВОГО ПАРАМЕТРА
                     )
                 )
             except Exception as e_send:
