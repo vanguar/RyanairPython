@@ -964,32 +964,101 @@ async def back_price_to_std_arr_city_oneway_handler(update: Update, context: Con
     )
     return config.S_SELECTING_ARRIVAL_CITY
 
+# bot/handlers.py
 async def back_price_to_std_ret_date_twoway_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    if not query:
+        logger.warning("back_price_to_std_ret_date_twoway_handler вызван без query")
+        return ConversationHandler.END
     await query.answer()
+
+    # Очищаем данные о выборе цены
     context.user_data.pop('price_preference_choice', None)
     context.user_data.pop('max_price', None)
 
-    year = context.user_data.get('return_year')
-    month = context.user_data.get('return_month')
-    range_str = context.user_data.get('return_date_range_str')
-    dep_date_obj = helpers.validate_date_format(context.user_data.get('departure_date'))
+    return_year = context.user_data.get('return_year')
+    return_month = context.user_data.get('return_month')
 
-    if not all([year, month, range_str, dep_date_obj]):
-        await query.edit_message_text("Ошибка: не хватает данных для возврата. /start")
+    start_day: int | None = None
+    end_day: int | None = None
+
+    # Пытаемся получить start_day и end_day для диапазона дат возврата
+    if context.user_data.get('is_return_range_search', False):
+        # Если был выбран весь диапазон через handle_entire_range_selected
+        date_from_str = context.user_data.get('return_date_from')
+        date_to_str = context.user_data.get('return_date_to')
+        if date_from_str and date_to_str:
+            try:
+                start_day = int(date_from_str.split('-')[2])
+                end_day = int(date_to_str.split('-')[2])
+            except (IndexError, ValueError, TypeError):
+                logger.error(f"Ошибка парсинга дней из return_date_from/to: {date_from_str}, {date_to_str}")
+    else:
+        # Если пользователь выбирал диапазон (1-10, 11-20 и т.д.) перед выбором конкретной даты
+        range_str = context.user_data.get('return_date_range_str')
+        if range_str:
+            try:
+                start_day_parsed, end_day_parsed = map(int, range_str.split('-'))
+                start_day = start_day_parsed
+                end_day = end_day_parsed
+            except ValueError:
+                logger.error(f"Ошибка парсинга return_date_range_str: '{range_str}'")
+
+    # Получаем дату вылета для сравнения (min_allowed_date для возврата)
+    departure_date_to_compare_str: str | None = None
+    if context.user_data.get('is_departure_range_search', False):
+        departure_date_to_compare_str = context.user_data.get('departure_date_from')
+    else:
+        departure_date_to_compare_str = context.user_data.get('departure_date')
+    
+    departure_date_obj: datetime | None = None
+    if departure_date_to_compare_str:
+        departure_date_obj = helpers.validate_date_format(departure_date_to_compare_str)
+
+    # Проверяем наличие всех необходимых данных для вызова ask_specific_date
+    if not all([return_year, return_month, start_day is not None, end_day is not None, departure_date_obj]):
+        missing_parts = []
+        if not return_year: missing_parts.append("год возврата")
+        if not return_month: missing_parts.append("месяц возврата")
+        if start_day is None or end_day is None: missing_parts.append("диапазон дней возврата")
+        if not departure_date_obj: missing_parts.append("дата вылета")
+        
+        logger.error(
+            f"back_price_to_std_ret_date_twoway_handler: Не хватает данных для возврата к выбору даты. Отсутствуют: {', '.join(missing_parts)}. "
+            f"UserData: {context.user_data}"
+        )
+        await query.edit_message_text(
+            "Ошибка: не хватает данных для возврата к выбору даты. Пожалуйста, начните поиск заново: /start"
+        )
         return ConversationHandler.END
+
+    # Формируем сообщение и вызываем ask_specific_date
+    month_name_rus = config.RUSSIAN_MONTHS.get(return_month, str(return_month))
+    message_text_for_ask = f"Диапазон: {start_day:02d}-{end_day:02d} {month_name_rus} {return_year}. 🗓️ Выберите дату обратного вылета:"
+
+    # Сначала редактируем сообщение, с которого пришла кнопка "Назад" (сообщение о выборе цены)
     try:
-        start_day, end_day = map(int, range_str.split('-'))
-    except ValueError:
-        await query.edit_message_text("Ошибка формата диапазона. /start")
-        return ConversationHandler.END
+        await query.edit_message_text(
+            text=f"Возврат к выбору даты возврата ({month_name_rus} {return_year}, диапазон {start_day:02d}-{end_day:02d})."
+        )
+    except Exception as e_edit:
+        logger.warning(f"Не удалось отредактировать сообщение в back_price_to_std_ret_date_twoway_handler: {e_edit}")
+        # Если редактирование не удалось, все равно пытаемся отправить новую клавиатуру
 
-    await ask_specific_date(query, context, year, month, start_day, end_day,
-                            f"Диапазон: {range_str}. Выберите дату обратного вылета:",
-                            callback_prefix=config.CALLBACK_PREFIX_STANDARD + "ret_date_",
-                            min_allowed_date_for_comparison=dep_date_obj,
-                            keyboard_back_callback=config.CB_BACK_STD_RET_DATE_TO_RANGE,
-                            range_selection_type="dep")
+    # Затем отправляем новую клавиатуру для выбора конкретной даты (это может быть новое сообщение или часть ask_specific_date)
+    await ask_specific_date(
+        source_update_or_query=query, # query содержит message для edit_message_text в ask_specific_date
+        context=context,
+        year=return_year,
+        month=return_month,
+        range_start=start_day, # Используем полученные start_day
+        range_end=end_day,     # и end_day
+        message_text=message_text_for_ask,
+        callback_prefix=config.CALLBACK_PREFIX_STANDARD + "ret_date_",
+        min_allowed_date_for_comparison=departure_date_obj, # Минимальная дата для возврата - это дата вылета
+        keyboard_back_callback=config.CB_BACK_STD_RET_DATE_TO_RANGE, # Назад к выбору под-диапазона (1-10, 11-20 и т.д.)
+        range_selection_type="ret"
+    )
     return config.S_SELECTING_RETURN_DATE
 
 async def back_price_to_entering_custom_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
