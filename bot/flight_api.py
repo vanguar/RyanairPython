@@ -31,7 +31,7 @@ async def find_flights_api(
         logger.error("Ryanair API клиент не инициализирован.")
         return []
 
-    raw_flights = []
+    raw_flights = [] # Список для "сырых" результатов от API
     try:
         logger.info(
             f"Запрос к API Ryanair: {departure_airport_iata} -> {arrival_airport_iata or 'Любой'}, "
@@ -39,6 +39,7 @@ async def find_flights_api(
         )
         if return_date_from_str and return_date_to_str:
             logger.info(f"Даты возврата для API: {return_date_from_str}-{return_date_to_str}")
+            # Запрос рейсов туда-обратно
             raw_flights = ryanair_api.get_cheapest_return_flights(
                 source_airport=departure_airport_iata,
                 date_from=date_from_str,
@@ -49,6 +50,7 @@ async def find_flights_api(
                 max_price=float(max_price) if max_price is not None else None,
             )
         else:
+            # Запрос рейсов в одну сторону
             raw_flights = ryanair_api.get_cheapest_flights(
                 airport=departure_airport_iata,
                 date_from=date_from_str,
@@ -60,7 +62,7 @@ async def find_flights_api(
         logger.info(f"API Ryanair вернул {len(raw_flights) if raw_flights else 0} рейсов (до внутренней фильтрации).")
 
     except Exception as e:
-        logger.error(f"Ошибка при запросе к Ryanair API: {e}")
+        logger.error(f"Ошибка при запросе к Ryanair API: {e}", exc_info=True) # Добавлено exc_info=True для полного стека ошибки
         logger.error(
             f"Параметры запроса: dep={departure_airport_iata}, arr={arrival_airport_iata}, "
             f"date_from={date_from_str}, date_to={date_to_str}, ret_from={return_date_from_str}, "
@@ -68,87 +70,104 @@ async def find_flights_api(
         )
         return []
 
-    # --- Блок пост-фильтрации рейсов по датам ---
-    if not raw_flights:
+    # --- НАЧАЛО БЛОКА ПОСТ-ФИЛЬТРАЦИИ РЕЙСОВ ПО ДАТАМ ---
+    if not raw_flights: # Если API ничего не вернул или список пуст
         return []
 
     try:
+        # Преобразуем строки дат окна вылета в объекты date для сравнения
         dep_window_start_date = datetime.strptime(date_from_str, "%Y-%m-%d").date()
         dep_window_end_date = datetime.strptime(date_to_str, "%Y-%m-%d").date()
     except ValueError:
         logger.error(f"Некорректный формат дат для окна вылета при фильтрации: {date_from_str} - {date_to_str}")
-        return []
+        return [] # Не можем фильтровать, если даты окна некорректны
 
     ret_window_start_date = None
     ret_window_end_date = None
+    # Проверяем, был ли это поиск туда-обратно (для которого нужны даты возврата)
     is_round_trip_search_intended = bool(return_date_from_str and return_date_to_str)
     
     if is_round_trip_search_intended:
         try:
+            # Преобразуем строки дат окна возврата в объекты date
             ret_window_start_date = datetime.strptime(return_date_from_str, "%Y-%m-%d").date()
             ret_window_end_date = datetime.strptime(return_date_to_str, "%Y-%m-%d").date()
         except ValueError:
             logger.error(f"Некорректный формат дат для окна возврата при фильтрации: {return_date_from_str} - {return_date_to_str}")
-            return []
+            return [] # Не можем фильтровать, если даты окна возврата некорректны
 
     filtered_flights = []
     for flight_obj in raw_flights:
         try:
             outbound_flight_part = None
-            # Определяем, какая часть объекта содержит информацию о вылете "туда"
+            # Определяем, какая часть объекта рейса содержит информацию о вылете "туда"
+            # Это зависит от того, возвращает ли API для round-trip один объект с 'outbound'/'inbound'
+            # или это всегда объекты типа one-way flight.
+            # Предполагаем, что flight_obj может быть либо one-way, либо round-trip с полями outbound/inbound.
             if hasattr(flight_obj, 'outbound') and flight_obj.outbound and hasattr(flight_obj.outbound, 'departureTime'):
                 outbound_flight_part = flight_obj.outbound
-            elif hasattr(flight_obj, 'departureTime'): # Для рейсов в одну сторону
+            elif hasattr(flight_obj, 'departureTime'): # Для рейсов в одну сторону или если get_cheapest_return_flights возвращает список отдельных рейсов
                 outbound_flight_part = flight_obj
             
             if not outbound_flight_part:
-                logger.warning(f"Не удалось извлечь информацию о вылете (туда) из объекта рейса: {flight_obj}")
+                logger.warning(f"Не удалось извлечь информацию о вылете (туда) из объекта рейса: {type(flight_obj)}")
                 continue
 
             out_dep_time_attr = outbound_flight_part.departureTime
-            out_actual_departure_date = None
+            out_actual_departure_date = None # Фактическая дата вылета "туда"
+
             if isinstance(out_dep_time_attr, str):
                 out_actual_departure_date = datetime.fromisoformat(out_dep_time_attr.replace("Z", "+00:00")).date()
             elif isinstance(out_dep_time_attr, datetime):
                 out_actual_departure_date = out_dep_time_attr.date()
             else:
-                logger.warning(f"Неизвестный тип времени вылета (туда) '{out_dep_time_attr}' у рейса.")
+                logger.warning(f"Неизвестный тип времени вылета (туда) '{type(out_dep_time_attr)}' у рейса.")
                 continue
             
+            # Фильтруем по дате вылета "туда"
             if not (dep_window_start_date <= out_actual_departure_date <= dep_window_end_date):
-                continue # Вылет "туда" вне диапазона
+                # logger.debug(f"Рейс отфильтрован (туда): {out_actual_departure_date} не в [{dep_window_start_date}, {dep_window_end_date}]")
+                continue 
 
+            # Если это поиск туда-обратно, проверяем и фильтруем дату вылета "обратно"
             if is_round_trip_search_intended:
+                # Убедимся, что данные для обратного рейса существуют и корректны
                 if not (hasattr(flight_obj, 'inbound') and flight_obj.inbound and hasattr(flight_obj.inbound, 'departureTime')):
-                    logger.warning(f"Поиск туда-обратно, но отсутствуют данные о рейсе обратно в объекте: {flight_obj}")
-                    continue 
+                    logger.warning(f"Поиск туда-обратно, но отсутствуют или неполны данные о рейсе обратно в объекте: {type(flight_obj)}")
+                    continue # Пропускаем этот рейс, так как он неполный для туда-обратно
 
                 inbound_flight_part = flight_obj.inbound
                 in_dep_time_attr = inbound_flight_part.departureTime
-                in_actual_departure_date = None
+                in_actual_departure_date = None # Фактическая дата вылета "обратно"
+
                 if isinstance(in_dep_time_attr, str):
                     in_actual_departure_date = datetime.fromisoformat(in_dep_time_attr.replace("Z", "+00:00")).date()
                 elif isinstance(in_dep_time_attr, datetime):
                     in_actual_departure_date = in_dep_time_attr.date()
                 else:
-                    logger.warning(f"Неизвестный тип времени вылета (обратно) '{in_dep_time_attr}' у рейса.")
+                    logger.warning(f"Неизвестный тип времени вылета (обратно) '{type(in_dep_time_attr)}' у рейса.")
                     continue
                 
+                # Фильтруем по дате вылета "обратно"
+                # ret_window_start_date и ret_window_end_date должны быть определены, если is_round_trip_search_intended is True
                 if not (ret_window_start_date and ret_window_end_date and \
                         ret_window_start_date <= in_actual_departure_date <= ret_window_end_date):
-                    continue # Вылет "обратно" вне диапазона
+                    # logger.debug(f"Рейс отфильтрован (обратно): {in_actual_departure_date} не в [{ret_window_start_date}, {ret_window_end_date}]")
+                    continue
             
+            # Если все проверки пройдены, добавляем рейс в отфильтрованный список
             filtered_flights.append(flight_obj)
 
         except Exception as filter_exc:
             logger.warning(f"Ошибка при фильтрации отдельного рейса: {filter_exc}. Рейс: {flight_obj}", exc_info=True)
-            continue
+            continue # Пропускаем рейс, который не удалось обработать
 
     final_count = len(filtered_flights)
     if len(raw_flights) != final_count:
-        logger.info(f"Внутренняя фильтрация дат API: Исходно {len(raw_flights)} рейсов, после фильтрации {final_count} рейсов.")
+        logger.info(f"Внутренняя фильтрация дат API: Исходно {len(raw_flights)} рейсов, после фильтрации {final_count} рейсов (Dep: {date_from_str}-{date_to_str}, Ret: {return_date_from_str or 'N/A'}-{return_date_to_str or 'N/A'})")
     
     return filtered_flights
+    # --- КОНЕЦ БЛОКА ПОСТ-ФИЛЬТРАЦИИ РЕЙСОВ ПО ДАТАМ ---
 
 # MODIFIED: Логика find_flights_with_fallback изменена для сбора рейсов по датам
 # ПОЛНОСТЬЮ ИСПРАВЛЕННЫЙ МЕТОД find_flights_with_fallback
