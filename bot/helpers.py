@@ -10,12 +10,17 @@ from .config import COUNTRIES_DATA # Загрузка COUNTRIES_DATA если о
 logger = logging.getLogger(__name__)
 
 
-def validate_date_format(date_str: str) -> Union[datetime, None]: #
-    """Проверяет, что строка даты соответствует формату YYYY-MM-DD и возвращает datetime объект."""
+def validate_date_format(date_str: str | None) -> datetime | None:
+    """
+    Проверяет, что строка даты соответствует формату ГГГГ-ММ-ДД и возвращает datetime объект.
+    Теперь корректно обрабатывает None на входе.
+    """
+    if not date_str:  # Явная проверка на None или пустую строку
+        return None
     try:
-        return datetime.strptime(date_str, "%Y-%m-%d") #
-    except ValueError: #
-        return None #
+        return datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        return None
 
 def validate_price(price_str: str) -> Union[Decimal, None]: #
     """Проверяет, что строка является корректной ценой (положительное Decimal)."""
