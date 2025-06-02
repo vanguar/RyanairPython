@@ -106,6 +106,7 @@ CALLBACK_PREFIX_STANDARD = "std_"
 CALLBACK_PREFIX_FLEX = "flex_"
 CALLBACK_SKIP = "skip_step"
 CALLBACK_NO_SPECIFIC_DATES = "no_specific_dates"
+CALLBACK_ENTIRE_RANGE_SELECTED = "entire_range_slctd_"
 
 # Callback data для кнопок выбора опции цены
 CALLBACK_PRICE_CUSTOM = "price_custom"

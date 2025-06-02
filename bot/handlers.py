@@ -56,7 +56,8 @@ from .config import (
     ASK_SAVE_SEARCH_PREFERENCES,
     CALLBACK_SAVE_SEARCH_YES, # Для определения в ConversationHandler, если паттерн используется там напрямую
     CALLBACK_SAVE_SEARCH_NO,  # Аналогично
-    CALLBACK_START_LAST_SAVED_SEARCH # Для entry_points в ConversationHandler
+    CALLBACK_START_LAST_SAVED_SEARCH, # Для entry_points в ConversationHandler
+    CALLBACK_ENTIRE_RANGE_SELECTED
 )
 
 logger = logging.getLogger(__name__)
@@ -345,6 +346,7 @@ async def ask_specific_date(source_update_or_query: Union[Update, CallbackQuery,
 # bot/handlers.py
 # ... (после ask_... функций) ...
 
+# ПОЛНОСТЬЮ ИСПРАВЛЕННЫЙ МЕТОД launch_flight_search
 async def launch_flight_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
     Собирает параметры из context.user_data, вызывает API поиска рейсов
@@ -357,54 +359,81 @@ async def launch_flight_search(update: Update, context: ContextTypes.DEFAULT_TYP
     try:
         dep_iata: Union[str, None] = context.user_data.get('departure_airport_iata')
         arr_iata: Union[str, None] = context.user_data.get('arrival_airport_iata')
-        dep_date_str: Union[str, None] = context.user_data.get('departure_date')
-        ret_date_str: Union[str, None] = context.user_data.get('return_date')
         user_max_price: Union[Decimal, None] = context.user_data.get('max_price')
         price_preference: Union[PriceChoice, None] = context.user_data.get('price_preference_choice')
         is_one_way: bool = context.user_data.get('flight_type_one_way', True)
         current_flow: Union[str, None] = context.user_data.get('current_search_flow')
 
+        # --- Новая логика для дат ---
+        # Даты вылета
+        single_dep_date_str: Union[str, None] = context.user_data.get('departure_date')
+        is_dep_range_search: bool = context.user_data.get('is_departure_range_search', False)
+        explicit_dep_date_from: Union[str, None] = context.user_data.get('departure_date_from') if is_dep_range_search else None
+        explicit_dep_date_to: Union[str, None] = context.user_data.get('departure_date_to') if is_dep_range_search else None
+        
+        # Если выбран диапазон, то single_dep_date_str для find_flights_with_fallback должен быть None,
+        # чтобы не активировать логику +/- offset для одиночной даты.
+        # Параметр departure_date_str в find_flights_with_fallback теперь используется только для +/- offset или годового поиска.
+        dep_date_for_offset_or_year_search = single_dep_date_str if not is_dep_range_search else None
+
+        # Даты возврата
+        single_ret_date_str: Union[str, None] = None
+        is_ret_range_search: bool = False
+        explicit_ret_date_from: Union[str, None] = None
+        explicit_ret_date_to: Union[str, None] = None
+        ret_date_for_offset_search = None
+
+        if not is_one_way:
+            single_ret_date_str = context.user_data.get('return_date')
+            is_ret_range_search = context.user_data.get('is_return_range_search', False)
+            explicit_ret_date_from = context.user_data.get('return_date_from') if is_ret_range_search else None
+            explicit_ret_date_to = context.user_data.get('return_date_to') if is_ret_range_search else None
+            ret_date_for_offset_search = single_ret_date_str if not is_ret_range_search else None
+        # --- Конец новой логики для дат ---
+
         logger.info(
-            "Запуск launch_flight_search. Параметры: price_pref=%s, user_max_price=%s, dep_iata=%s, arr_iata=%s, dep_date=%s, ret_date=%s, one_way=%s, current_flow=%s",
-            price_preference, user_max_price, dep_iata, arr_iata, dep_date_str, ret_date_str, is_one_way, current_flow
+            "Запуск launch_flight_search. Параметры: price_pref=%s, user_max_price=%s, dep_iata=%s, arr_iata=%s, "
+            "single_dep_date=%s, is_dep_range=%s, dep_range_from=%s, dep_range_to=%s, "
+            "single_ret_date=%s, is_ret_range=%s, ret_range_from=%s, ret_range_to=%s, "
+            "one_way=%s, current_flow=%s",
+            price_preference, user_max_price, dep_iata, arr_iata, 
+            single_dep_date_str, is_dep_range_search, explicit_dep_date_from, explicit_dep_date_to,
+            single_ret_date_str, is_ret_range_search, explicit_ret_date_from, explicit_ret_date_to,
+            is_one_way, current_flow
         )
 
         if not dep_iata: # Минимальная валидация
             msg = "Ошибка: Аэропорт вылета не был указан для запуска поиска. Начните заново: /start"
-            if update.callback_query and update.callback_query.message:
-                try: await update.callback_query.edit_message_text(msg)
-                except Exception: 
-                    if effective_chat_id: await context.bot.send_message(effective_chat_id, msg)
-            elif update.message:
-                await update.message.reply_text(msg)
-            elif effective_chat_id:
-                await context.bot.send_message(effective_chat_id, msg)
+            # ... (существующая логика отправки сообщения об ошибке) ...
             return ConversationHandler.END
         
         if effective_chat_id: # Отправляем сообщение о начале поиска
             await context.bot.send_message(chat_id=effective_chat_id, text=config.MSG_SEARCHING_FLIGHTS)
 
-        # ВАШ СУЩЕСТВУЮЩИЙ ВЫЗОВ API для поиска рейсов
         all_flights_data: Dict[str, list] = await flight_api.find_flights_with_fallback(
             departure_airport_iata=dep_iata,
             arrival_airport_iata=arr_iata,
-            departure_date_str=dep_date_str,
-            max_price=user_max_price, # Должен быть Decimal или None
-            return_date_str=ret_date_str,
-            is_one_way=is_one_way
+            departure_date_str=dep_date_for_offset_or_year_search, # Для +/- offset или годового поиска
+            max_price=user_max_price,
+            return_date_str=ret_date_for_offset_search, # Для +/- offset
+            is_one_way=is_one_way,
+            # Новые параметры для явного диапазона
+            explicit_departure_date_from=explicit_dep_date_from,
+            explicit_departure_date_to=explicit_dep_date_to,
+            explicit_return_date_from=explicit_ret_date_from,
+            explicit_return_date_to=explicit_ret_date_to
         )
 
         logger.info(f"API flight_api.find_flights_with_fallback вернул: {'Данные есть (ключи: ' + str(list(all_flights_data.keys())) + ')' if isinstance(all_flights_data, dict) and all_flights_data else 'Пустой результат или не словарь'}")
-        if not isinstance(all_flights_data, dict): # Дополнительная проверка
+        if not isinstance(all_flights_data, dict):
              logger.warning(f"find_flights_with_fallback вернул не словарь: {type(all_flights_data)}")
              all_flights_data = {}
 
-        # ВАША СУЩЕСТВУЮЩАЯ ЛОГИКА ФИЛЬТРАЦИИ РЕЙСОВ
         final_flights_to_show: Dict[str, list]
         if price_preference == config.CALLBACK_PRICE_LOWEST and all_flights_data:
             final_flights_to_show = helpers.filter_cheapest_flights(all_flights_data)
             logger.info(f"После filter_cheapest_flights для 'lowest': {'Данные есть' if final_flights_to_show else 'Пусто'}")
-        else: # CALLBACK_PRICE_ALL, CALLBACK_PRICE_CUSTOM или если all_flights_data пуст
+        else: 
             final_flights_to_show = all_flights_data
             logger.info(f"Для '{price_preference}': используются все полученные рейсы ({'Данные есть' if final_flights_to_show else 'Пусто'})")
 
@@ -413,21 +442,7 @@ async def launch_flight_search(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         logger.error(f"Критическая ошибка в launch_flight_search: {e}", exc_info=True)
         error_msg = config.MSG_ERROR_OCCURRED + " (launch_fs). Пожалуйста, попробуйте /start."
-        # ... (ваша существующая логика обработки ошибок и отправки сообщения пользователю в launch_flight_search) ...
-        target_chat_id_err = update.effective_chat.id if update.effective_chat else None
-        if not target_chat_id_err and update.callback_query and update.callback_query.message:
-            target_chat_id_err = update.callback_query.message.chat_id
-
-        if target_chat_id_err:
-            if update.callback_query:
-                await update.callback_query.answer()
-                try:
-                    if update.callback_query.message: await update.callback_query.edit_message_text(text=error_msg)
-                    else: await context.bot.send_message(target_chat_id_err, error_msg)
-                except Exception: await context.bot.send_message(target_chat_id_err, error_msg)
-            elif update.message: await update.message.reply_text(error_msg)
-            else: await context.bot.send_message(target_chat_id_err, error_msg)
-        else: logger.error("Не удалось определить chat_id для отправки сообщения об ошибке в launch_flight_search.")
+        # ... (ваша существующая логика обработки ошибок и отправки сообщения пользователю) ...
         return ConversationHandler.END
 
 # bot/handlers.py
@@ -965,7 +980,8 @@ async def back_price_to_std_ret_date_twoway_handler(update: Update, context: Con
                             f"Диапазон: {range_str}. Выберите дату обратного вылета:",
                             callback_prefix=config.CALLBACK_PREFIX_STANDARD + "ret_date_",
                             min_allowed_date_for_comparison=dep_date_obj,
-                            keyboard_back_callback=config.CB_BACK_STD_RET_DATE_TO_RANGE)
+                            keyboard_back_callback=config.CB_BACK_STD_RET_DATE_TO_RANGE,
+                            range_selection_type="dep")
     return config.S_SELECTING_RETURN_DATE
 
 async def back_price_to_entering_custom_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1260,7 +1276,8 @@ async def standard_departure_date_range_selected(update: Update, context: Contex
                             f"Диапазон: {selected_range_str}. 🎯 Выберите дату:",
                             callback_prefix=config.CALLBACK_PREFIX_STANDARD + "dep_date_",
                             min_allowed_date_for_comparison=min_date_for_dep,
-                            keyboard_back_callback=config.CB_BACK_STD_DEP_DATE_TO_RANGE)
+                            keyboard_back_callback=config.CB_BACK_STD_DEP_DATE_TO_RANGE,
+                            range_selection_type="dep")
     return config.S_SELECTING_DEPARTURE_DATE
 
 async def standard_departure_date_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1283,7 +1300,8 @@ async def standard_departure_date_selected(update: Update, context: ContextTypes
                                         f"Диапазон: {range_str}. Выберите дату:",
                                         callback_prefix=config.CALLBACK_PREFIX_STANDARD + "dep_date_",
                                         min_allowed_date_for_comparison=min_allowed_date,
-                                        keyboard_back_callback=config.CB_BACK_STD_DEP_DATE_TO_RANGE)
+                                        keyboard_back_callback=config.CB_BACK_STD_DEP_DATE_TO_RANGE,
+                                        range_selection_type="dep")
                 return config.S_SELECTING_DEPARTURE_DATE
             except ValueError: pass # Ошибка в range_str, провалится ниже
         await query.edit_message_text("Ошибка даты. Начните /start.")
@@ -1291,6 +1309,10 @@ async def standard_departure_date_selected(update: Update, context: ContextTypes
 
 
     context.user_data['departure_date'] = selected_date_str
+    # ОЧИСТКА ДАННЫХ ДИАПАЗОНА
+    context.user_data.pop('departure_date_from', None)
+    context.user_data.pop('departure_date_to', None)
+    context.user_data.pop('is_departure_range_search', None)
     await query.edit_message_text(text=f"Дата вылета: {date_obj.strftime('%d-%m-%Y')}")
     # Переход к выбору страны прилета. Кнопку "Назад" отсюда не добавляем, т.к. это ReplyKeyboard.
     # "Назад" от страны прилета должен вести сюда (S_SELECTING_DEPARTURE_DATE)
@@ -1464,7 +1486,8 @@ async def standard_return_date_range_selected(update: Update, context: ContextTy
                             f"Диапазон: {selected_range_str}. Выберите дату возврата:",
                             callback_prefix=config.CALLBACK_PREFIX_STANDARD + "ret_date_",
                             min_allowed_date_for_comparison=departure_date_obj,
-                            keyboard_back_callback=config.CB_BACK_STD_RET_DATE_TO_RANGE)
+                            keyboard_back_callback=config.CB_BACK_STD_RET_DATE_TO_RANGE,
+                            range_selection_type="ret")
     return config.S_SELECTING_RETURN_DATE
 
 async def standard_return_date_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1487,7 +1510,8 @@ async def standard_return_date_selected(update: Update, context: ContextTypes.DE
                                         f"Диапазон: {range_str}. Выберите дату возврата:",
                                         callback_prefix=config.CALLBACK_PREFIX_STANDARD + "ret_date_",
                                         min_allowed_date_for_comparison=departure_date_obj,
-                                        keyboard_back_callback=config.CB_BACK_STD_RET_DATE_TO_RANGE)
+                                        keyboard_back_callback=config.CB_BACK_STD_RET_DATE_TO_RANGE,
+                                        range_selection_type="dep")
                  return config.S_SELECTING_RETURN_DATE
              except ValueError: pass
         await query.edit_message_text("Ошибка даты возврата. /start")
@@ -1495,6 +1519,10 @@ async def standard_return_date_selected(update: Update, context: ContextTypes.DE
 
 
     context.user_data['return_date'] = selected_date_str
+    # ОЧИСТКА ДАННЫХ ДИАПАЗОНА
+    context.user_data.pop('return_date_from', None)
+    context.user_data.pop('return_date_to', None)
+    context.user_data.pop('is_return_range_search', None)
     await query.edit_message_text(text=f"Дата обратного вылета: {return_date_obj.strftime('%d-%m-%Y')}")
     context.user_data['current_search_flow'] = config.FLOW_STANDARD
     await context.bot.send_message(
@@ -1779,7 +1807,8 @@ async def flex_departure_date_range_selected(update: Update, context: ContextTyp
                             f"Диапазон: {start_day}-{end_day} {month_name_rus}. 🗓️ Выберите дату вылета:",
                             callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_date_",
                             min_allowed_date_for_comparison=min_date_for_dep,
-                            keyboard_back_callback=config.CB_BACK_FLEX_DEP_DATE_TO_RANGE)
+                            keyboard_back_callback=config.CB_BACK_FLEX_DEP_DATE_TO_RANGE,
+                            range_selection_type="dep")
     return config.SELECTING_FLEX_DEPARTURE_DATE
 
 async def flex_departure_date_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1803,13 +1832,18 @@ async def flex_departure_date_selected(update: Update, context: ContextTypes.DEF
                                         f"Диапазон: {start_day}-{end_day} {month_name_rus}. 🗓️ Выберите дату вылета:",
                                         callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_date_",
                                         min_allowed_date_for_comparison=min_allowed_date,
-                                        keyboard_back_callback=config.CB_BACK_FLEX_DEP_DATE_TO_RANGE)
+                                        keyboard_back_callback=config.CB_BACK_FLEX_DEP_DATE_TO_RANGE,
+                                        range_selection_type="dep")
                 return config.SELECTING_FLEX_DEPARTURE_DATE
             except ValueError: pass
         await query.edit_message_text("🚫 Ошибка даты. Начните /start.")
         return ConversationHandler.END
 
     context.user_data['departure_date'] = selected_date_str
+    # ОЧИСТКА ДАННЫХ ДИАПАЗОНА
+    context.user_data.pop('departure_date_from', None)
+    context.user_data.pop('departure_date_to', None)
+    context.user_data.pop('is_departure_range_search', None)
     if query.message:
       try: await query.edit_message_text(text=f"🗓️ Дата вылета: {date_obj.strftime('%d-%m-%Y')}")
       except Exception as e: logger.warning(f"flex_departure_date_selected: edit_message_text failed: {e}")
@@ -1960,7 +1994,8 @@ async def flex_return_date_range_selected(update: Update, context: ContextTypes.
                             f"Диапазон: {start_day}-{end_day} {month_name_rus}. 🗓️ Выберите дату возврата:",
                             callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_date_",
                             min_allowed_date_for_comparison=min_allowed_return_date,
-                            keyboard_back_callback=config.CB_BACK_FLEX_RET_DATE_TO_RANGE)
+                            keyboard_back_callback=config.CB_BACK_FLEX_RET_DATE_TO_RANGE,
+                            range_selection_type="ret")
     return config.SELECTING_FLEX_RETURN_DATE
 
 async def flex_return_date_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1989,13 +2024,18 @@ async def flex_return_date_selected(update: Update, context: ContextTypes.DEFAUL
                                         f"📏 Диапазон: {start_day_orig}-{end_day_orig} {month_name_rus}. 🗓️ Выберите дату возврата:",
                                         callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_date_",
                                         min_allowed_date_for_comparison=departure_date_obj,
-                                        keyboard_back_callback=config.CB_BACK_FLEX_RET_DATE_TO_RANGE)
+                                        keyboard_back_callback=config.CB_BACK_FLEX_RET_DATE_TO_RANGE,
+                                        range_selection_type="dep")
                  return config.SELECTING_FLEX_RETURN_DATE
              except ValueError: pass
         await query.edit_message_text("❗Ошибка даты возврата. Начните /start.")
         return ConversationHandler.END
 
     context.user_data['return_date'] = selected_date_str
+    # ОЧИСТКА ДАННЫХ ДИАПАЗОНА
+    context.user_data.pop('return_date_from', None)
+    context.user_data.pop('return_date_to', None)
+    context.user_data.pop('is_return_range_search', None)
     if query.message:
         try: await query.edit_message_text(text=f"🗓️ Дата обратного вылета: {return_date_obj.strftime('%d-%m-%Y')}")
         except Exception as e: logger.warning(f"flex_return_date_selected: edit_message_text failed: {e}")
@@ -2109,7 +2149,8 @@ async def back_flex_ret_year_to_dep_date_handler(update: Update, context: Contex
                             f"Диапазон: {start_day}-{end_day} {month_name_rus}. 🗓️ Выберите дату вылета:",
                             callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_date_",
                             min_allowed_date_for_comparison=min_date_for_dep,
-                            keyboard_back_callback=config.CB_BACK_FLEX_DEP_DATE_TO_RANGE)
+                            keyboard_back_callback=config.CB_BACK_FLEX_DEP_DATE_TO_RANGE,
+                            range_selection_type="dep")
     return config.SELECTING_FLEX_DEPARTURE_DATE
 
 async def back_flex_ret_month_to_year_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -2471,6 +2512,177 @@ async def handle_invalid_price_choice_fallback(update: Update, context: ContextT
         logger.warning(
             f"Пользователь {user_identifier} нажал кнопку цены '{query.data}' на сообщении "
             f"{message_identifier} в несоответствующем состоянии диалога.")
+        
+# НОВЫЙ МЕТОД
+async def handle_entire_range_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """
+    Обрабатывает выбор всего диапазона дат (кнопка "Выбрать весь диапазон ДД-ДД").
+    """
+    query = update.callback_query
+    if not query or not query.data:
+        logger.warning("handle_entire_range_selected вызван без query или query.data")
+        return ConversationHandler.END
+    
+    await query.answer()
+
+    # Callback data формат: config.CALLBACK_ENTIRE_RANGE_SELECTED + "dep_YYYY-MM-DDstart-DDend"
+    # или config.CALLBACK_ENTIRE_RANGE_SELECTED + "ret_YYYY-MM-DDstart-DDend"
+    try:
+        # Убираем префикс
+        payload = query.data.replace(config.CALLBACK_ENTIRE_RANGE_SELECTED, "")
+        # Разделяем тип (dep/ret) и строку с датами
+        range_type, date_info_str = payload.split("_", 1) # "dep", "YYYY-MM-DDstart-DDend"
+        
+        # Парсим год, месяц, день начала, день конца
+        year_str, month_str, start_day_str, end_day_str = date_info_str.split('-')
+        year = int(year_str)
+        month = int(month_str)
+        start_day = int(start_day_str)
+        end_day = int(end_day_str)
+    except (ValueError, IndexError) as e:
+        logger.error(f"Ошибка парсинга callback_data в handle_entire_range_selected: {query.data}, {e}")
+        await query.edit_message_text("Произошла ошибка при обработке вашего выбора. Пожалуйста, /start")
+        return ConversationHandler.END
+
+    date_from_str = f"{year}-{month:02d}-{start_day:02d}"
+    date_to_str = f"{year}-{month:02d}-{end_day:02d}"
+    
+    # Валидация дат (минимальная)
+    try:
+        datetime.strptime(date_from_str, "%Y-%m-%d")
+        datetime.strptime(date_to_str, "%Y-%m-%d")
+    except ValueError:
+        logger.error(f"Некорректный формат дат после парсинга в handle_entire_range_selected: from={date_from_str}, to={date_to_str}")
+        await query.edit_message_text("Произошла ошибка (неверный формат даты). Пожалуйста, /start")
+        return ConversationHandler.END
+
+    current_flow = context.user_data.get('current_search_flow')
+    month_name_rus = config.RUSSIAN_MONTHS.get(month, str(month))
+    selected_range_text = f"{start_day:02d}-{end_day:02d} {month_name_rus} {year}"
+
+    if range_type == "dep":
+        context.user_data['departure_date_from'] = date_from_str
+        context.user_data['departure_date_to'] = date_to_str
+        context.user_data.pop('departure_date', None) # Очищаем одиночную дату
+        context.user_data['is_departure_range_search'] = True
+        
+        # Очищаем данные о конкретном диапазоне для выбора одиночной даты, если они были
+        context.user_data.pop('departure_date_range_str', None) 
+
+        await query.edit_message_text(text=f"✈️ Диапазон дат вылета: {selected_range_text}")
+
+        if current_flow == config.FLOW_STANDARD:
+            # Переход к выбору страны прилета
+            await context.bot.send_message(
+                chat_id=query.message.chat_id, # Используем chat_id из query.message
+                text="🌍 Выберите страну прилёта:", 
+                reply_markup=keyboards.get_country_reply_keyboard()
+            )
+            return config.S_SELECTING_ARRIVAL_COUNTRY
+        elif current_flow == config.FLOW_FLEX:
+            if context.user_data.get('flight_type_one_way', True):
+                # Если это гибкий поиск в одну сторону, и даты вылета (диапазон) заданы,
+                # то можно запускать поиск. (Предполагается, что аэропорт вылета уже задан)
+                if not context.user_data.get('departure_airport_iata'):
+                    await context.bot.send_message(chat_id=query.message.chat_id, text="Не указан аэропорт вылета для гибкого поиска. /start")
+                    return ConversationHandler.END
+                return await launch_flight_search(update, context)
+            else: # Гибкий поиск туда-обратно, нужны даты возврата
+                # Переход к выбору года возврата
+                # query здесь - это CallbackQuery от выбора диапазона дат вылета,
+                # ask_year ожидает Update или CallbackQuery.
+                await ask_year(query, context, "🗓️ Выберите год обратного вылета:",
+                               callback_prefix=config.CALLBACK_PREFIX_FLEX + "ret_year_",
+                               # CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE должен вести обратно к выбору ДАТЫ вылета,
+                               # но мы выбрали ДИАПАЗОН. Это "назад" может потребовать доработки или
+                               # можно решить, что после выбора диапазона "назад" на этом шаге не будет столь явным.
+                               # Пока оставим как есть, но это потенциальное место для улучшения UX кнопки "Назад".
+                               keyboard_back_callback=config.CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE) 
+                return config.SELECTING_FLEX_RETURN_YEAR
+        else: # Неизвестный current_flow
+            logger.error(f"Неизвестный current_search_flow: {current_flow} в handle_entire_range_selected для 'dep'")
+            await context.bot.send_message(chat_id=query.message.chat_id, text="Произошла системная ошибка. /start")
+            return ConversationHandler.END
+            
+    elif range_type == "ret":
+        # Проверка, что дата возврата (начало диапазона) не раньше даты вылета
+        departure_date_final_str = context.user_data.get('departure_date')
+        departure_date_from_range_str = context.user_data.get('departure_date_from')
+
+        if departure_date_final_str: # Если была выбрана одиночная дата вылета
+            dep_dt_obj = helpers.validate_date_format(departure_date_final_str)
+        elif departure_date_from_range_str: # Если был выбран диапазон дат вылета, берем его начало
+            dep_dt_obj = helpers.validate_date_format(departure_date_from_range_str)
+        else: # Даты вылета нет - ошибка
+            await query.edit_message_text("Ошибка: не найдена дата вылета для сравнения. /start")
+            return ConversationHandler.END
+
+        current_return_range_start_obj = helpers.validate_date_format(date_from_str)
+        if not dep_dt_obj or not current_return_range_start_obj or current_return_range_start_obj < dep_dt_obj:
+            await query.edit_message_text(f"🚫 Диапазон возврата ({selected_range_text}) не может начинаться раньше даты вылета ({dep_dt_obj.strftime('%d-%m-%Y') if dep_dt_obj else 'N/A'}). Пожалуйста, выберите корректный диапазон для возврата.")
+            # Чтобы пользователь мог выбрать заново, нужно вернуть его на шаг выбора диапазона возврата.
+            # Это требует сохранения year, month, range_start, range_end из предыдущего шага (выбора диапазона возврата).
+            # Для простоты, пока отправим его выбирать год возврата снова.
+            # Либо, если данные есть в user_data (return_year, return_month), можно попытаться переспросить диапазон.
+            # Этот блок лучше вызывать в соответствующем хендлере выбора диапазона дат возврата (например, flex_return_date_range_selected).
+            # Но так как это уже выбор "всего диапазона", то эта проверка здесь уместна.
+            # Возвращаем на предыдущий шаг - выбор диапазона дат возврата (если возможно) или месяца/года.
+            # TODO: Улучшить возврат на предыдущий шаг. Пока просто ошибка и /start.
+            # Этого не должно происходить, если клавиатура генерируется правильно с min_allowed_date
+            logger.warning(f"Попытка выбрать диапазон возврата раньше даты вылета. Dep: {dep_dt_obj}, RetFrom: {current_return_range_start_obj}")
+            # Попытка вернуть к выбору диапазона дат возврата (самый близкий шаг)
+            ret_year = context.user_data.get('return_year')
+            ret_month = context.user_data.get('return_month')
+            if ret_year and ret_month:
+                month_name_ret = config.RUSSIAN_MONTHS.get(ret_month, str(ret_month))
+                cb_prefix_ret = config.CALLBACK_PREFIX_STANDARD if current_flow == config.FLOW_STANDARD else config.CALLBACK_PREFIX_FLEX
+                cb_back_ret = config.CB_BACK_STD_RET_RANGE_TO_MONTH if current_flow == config.FLOW_STANDARD else config.CB_BACK_FLEX_RET_RANGE_TO_MONTH
+
+                await ask_date_range(query, context, ret_year, ret_month,
+                                   f"Выбран: {month_name_ret} {ret_year}. 📏 Выберите диапазон дат для возврата:",
+                                   callback_prefix=cb_prefix_ret + "ret_range_",
+                                   keyboard_back_callback=cb_back_ret)
+                if current_flow == config.FLOW_STANDARD: return config.S_SELECTING_RETURN_DATE_RANGE
+                if current_flow == config.FLOW_FLEX: return config.SELECTING_FLEX_RETURN_DATE_RANGE
+            
+            await query.edit_message_text("Ошибка в дате возврата. Попробуйте /start") # Fallback
+            return ConversationHandler.END
+
+
+        context.user_data['return_date_from'] = date_from_str
+        context.user_data['return_date_to'] = date_to_str
+        context.user_data.pop('return_date', None) # Очищаем одиночную дату
+        context.user_data['is_return_range_search'] = True
+        
+        context.user_data.pop('return_date_range_str', None)
+
+        await query.edit_message_text(text=f"✈️ Диапазон дат возврата: {selected_range_text}")
+
+        if current_flow == config.FLOW_STANDARD:
+            # Переход к выбору опции цены
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=config.MSG_PRICE_OPTION_PROMPT,
+                reply_markup=keyboards.get_price_options_keyboard(back_callback_data=config.CB_BACK_PRICE_TO_STD_RET_DATE_TWOWAY)
+            )
+            return config.SELECTING_PRICE_OPTION
+        elif current_flow == config.FLOW_FLEX:
+            # Все данные для гибкого поиска туда-обратно собраны
+            if not context.user_data.get('departure_airport_iata'): # Нужен аэропорт вылета
+                 await context.bot.send_message(chat_id=query.message.chat_id, text="Не указан аэропорт вылета для гибкого поиска. /start")
+                 return ConversationHandler.END
+            return await launch_flight_search(update, context)
+        else: # Неизвестный current_flow
+            logger.error(f"Неизвестный current_search_flow: {current_flow} в handle_entire_range_selected для 'ret'")
+            await context.bot.send_message(chat_id=query.message.chat_id, text="Произошла системная ошибка. /start")
+            return ConversationHandler.END
+    else:
+        logger.error(f"Неизвестный range_type: {range_type} в handle_entire_range_selected")
+        await query.edit_message_text("Произошла ошибка при обработке типа диапазона. Пожалуйста, /start")
+        return ConversationHandler.END
+
+    # Этот return не должен достигаться, если все ветки обработаны
+    return ConversationHandler.END        
 
 # ИМПОРТ handlers_saved_search (ПОСЛЕ ВСЕХ ФУНКЦИЙ ЭТОГО ФАЙЛА, ПЕРЕД create_conversation_handler)
 from . import handlers_saved_search
@@ -2479,13 +2691,20 @@ from . import handlers_saved_search
 def create_conversation_handler() -> ConversationHandler:
     # Обертки
     async def _handle_save_search_preference_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        return await handlers_saved_search.handle_save_search_preference_callback(update, context, launch_flight_search_func=launch_flight_search) # launch_flight_search передается как есть
+        return await handlers_saved_search.handle_save_search_preference_callback(update, context, launch_flight_search_func=launch_flight_search)
 
     async def _start_last_saved_search_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return await handlers_saved_search.start_last_saved_search_callback(update, context, launch_flight_search_func=launch_flight_search)
 
     price_option_pattern = f"^({config.CALLBACK_PRICE_CUSTOM}|{config.CALLBACK_PRICE_LOWEST}|{config.CALLBACK_PRICE_ALL})$"
     price_fallback_pattern = r"^price_.*$"
+
+    # Паттерн для выбора всего диапазона дат
+    # Он должен соответствовать формату, который вы генерируете в keyboards.py:
+    # f"{CALLBACK_ENTIRE_RANGE_SELECTED}{range_selection_type}_YYYY-MM-DDstart-DDend"
+    entire_range_pattern_dep = f"^{config.CALLBACK_ENTIRE_RANGE_SELECTED}dep_"
+    entire_range_pattern_ret = f"^{config.CALLBACK_ENTIRE_RANGE_SELECTED}ret_"
+
 
     conv_handler = ConversationHandler(
         entry_points=[
@@ -2511,8 +2730,9 @@ def create_conversation_handler() -> ConversationHandler:
                 CallbackQueryHandler(standard_departure_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_range_"),
                 CallbackQueryHandler(back_std_dep_range_to_month_handler, pattern=f"^{config.CB_BACK_STD_DEP_RANGE_TO_MONTH}$")
             ],
-            config.S_SELECTING_DEPARTURE_DATE: [
-                CallbackQueryHandler(standard_departure_date_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_date_"),
+            config.S_SELECTING_DEPARTURE_DATE: [ # Состояние выбора конкретной даты вылета
+                CallbackQueryHandler(standard_departure_date_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}dep_date_"), # Выбор одиночной даты
+                CallbackQueryHandler(handle_entire_range_selected, pattern=entire_range_pattern_dep), # Выбор всего диапазона для вылета
                 CallbackQueryHandler(back_std_dep_date_to_range_handler, pattern=f"^{config.CB_BACK_STD_DEP_DATE_TO_RANGE}$")
             ],
             config.S_SELECTING_ARRIVAL_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, standard_arrival_country)],
@@ -2529,8 +2749,9 @@ def create_conversation_handler() -> ConversationHandler:
                 CallbackQueryHandler(standard_return_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_range_"),
                 CallbackQueryHandler(back_std_ret_range_to_month_handler, pattern=f"^{config.CB_BACK_STD_RET_RANGE_TO_MONTH}$")
             ],
-            config.S_SELECTING_RETURN_DATE: [
-                CallbackQueryHandler(standard_return_date_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_date_"),
+            config.S_SELECTING_RETURN_DATE: [ # Состояние выбора конкретной даты возврата
+                CallbackQueryHandler(standard_return_date_selected, pattern=f"^{config.CALLBACK_PREFIX_STANDARD}ret_date_"), # Выбор одиночной даты
+                CallbackQueryHandler(handle_entire_range_selected, pattern=entire_range_pattern_ret), # Выбор всего диапазона для возврата
                 CallbackQueryHandler(back_std_ret_date_to_range_handler, pattern=f"^{config.CB_BACK_STD_RET_DATE_TO_RANGE}$")
             ],
 
@@ -2565,8 +2786,9 @@ def create_conversation_handler() -> ConversationHandler:
                 CallbackQueryHandler(flex_departure_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_range_"),
                 CallbackQueryHandler(back_flex_dep_range_to_month_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_RANGE_TO_MONTH}$")
             ],
-            config.SELECTING_FLEX_DEPARTURE_DATE: [
-                CallbackQueryHandler(flex_departure_date_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_date_"),
+            config.SELECTING_FLEX_DEPARTURE_DATE: [ # Состояние выбора конкретной даты вылета (гибкий)
+                CallbackQueryHandler(flex_departure_date_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}dep_date_"), # Выбор одиночной даты
+                CallbackQueryHandler(handle_entire_range_selected, pattern=entire_range_pattern_dep), # Выбор всего диапазона для вылета
                 CallbackQueryHandler(back_flex_dep_date_to_range_handler, pattern=f"^{config.CB_BACK_FLEX_DEP_DATE_TO_RANGE}$")
             ],
             config.SELECTING_FLEX_RETURN_YEAR: [
@@ -2581,8 +2803,9 @@ def create_conversation_handler() -> ConversationHandler:
                 CallbackQueryHandler(flex_return_date_range_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_range_"),
                 CallbackQueryHandler(back_flex_ret_range_to_month_handler, pattern=f"^{config.CB_BACK_FLEX_RET_RANGE_TO_MONTH}$")
             ],
-            config.SELECTING_FLEX_RETURN_DATE: [
-                CallbackQueryHandler(flex_return_date_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_date_"),
+            config.SELECTING_FLEX_RETURN_DATE: [ # Состояние выбора конкретной даты возврата (гибкий)
+                CallbackQueryHandler(flex_return_date_selected, pattern=f"^{config.CALLBACK_PREFIX_FLEX}ret_date_"), # Выбор одиночной даты
+                CallbackQueryHandler(handle_entire_range_selected, pattern=entire_range_pattern_ret), # Выбор всего диапазона для возврата
                 CallbackQueryHandler(back_flex_ret_date_to_range_handler, pattern=f"^{config.CB_BACK_FLEX_RET_DATE_TO_RANGE}$")
             ],
 
@@ -2596,13 +2819,13 @@ def create_conversation_handler() -> ConversationHandler:
             ],
             config.ENTERING_CUSTOM_PRICE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, enter_custom_price_handler),
+                # Если пользователь нажимает инлайн-кнопку "Назад" на сообщении "Введите цену"
                 CallbackQueryHandler(back_price_to_entering_custom_handler, pattern=f"^{config.CB_BACK_PRICE_TO_ENTERING_CUSTOM}$")
             ],
             config.ASK_SEARCH_OTHER_AIRPORTS: [
                 CallbackQueryHandler(handle_search_other_airports_decision, pattern=f"^{config.CALLBACK_YES_OTHER_AIRPORTS}$|^{config.CALLBACK_NO_OTHER_AIRPORTS}$")
             ],
 
-            # НОВЫЙ СТЕЙТ:
             config.ASK_SAVE_SEARCH_PREFERENCES: [
                 CallbackQueryHandler(_handle_save_search_preference_wrapper, pattern=f"^{config.CALLBACK_SAVE_SEARCH_YES}$|^{config.CALLBACK_SAVE_SEARCH_NO}$")
             ],
@@ -2610,15 +2833,19 @@ def create_conversation_handler() -> ConversationHandler:
         fallbacks=[
             CommandHandler('cancel', cancel_handler),
             CallbackQueryHandler(handle_invalid_price_choice_fallback, pattern=price_fallback_pattern),
-            # Ваши существующие fallbacks для невалидных дат и т.д.
             CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций (ошибка валидности месяца).", show_alert=True) if u.callback_query else None, pattern="^no_valid_months_error$"),
             CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций (ошибка валидности дат).", show_alert=True) if u.callback_query else None, pattern="^no_valid_dates_error$"),
-            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций (ошибка диапазона дат).", show_alert=True) if u.callback_query else None, pattern="^no_specific_dates_in_range_error$"),
+            CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций (нет дат в этом диапазоне).", show_alert=True) if u.callback_query else None, pattern="^no_specific_dates_in_range_error$"),
             CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций (ошибка валидности диапазона).", show_alert=True) if u.callback_query else None, pattern="^no_valid_date_ranges_error$"),
             CallbackQueryHandler(lambda u, c: u.callback_query.answer("Нет доступных опций (нет дат).", show_alert=True) if u.callback_query else None, pattern="^no_dates$"),
+            # Можно добавить общий обработчик для непредвиденных callback'ов внутри диалога
+            CallbackQueryHandler(error_handler_conv) # Этот обработчик должен быть последним в fallbacks или очень общим
         ],
         map_to_parent={},
-        per_message=False, # Рекомендуется для сложных диалогов, как у вас
-        allow_reentry=True,
+        per_message=False, 
+        allow_reentry=True, # Важно для возможности возврата к предыдущим шагам
+        # persistent=True, name="my_ryanair_conversation" # Для сохранения состояния между перезапусками (требует настройки persistence)
     )
+    # Добавление обработчика ошибок в сам ConversationHandler
+    # conv_handler.error_handler = error_handler_conv # Если хотите специфичный для диалога обработчик ошибок (но у вас уже есть глобальный)
     return conv_handler

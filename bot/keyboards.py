@@ -13,7 +13,8 @@ from .config import (
 
     # НОВЫЕ КОНСТАНТЫ ДЛЯ ИМПОРТА:
     CALLBACK_SAVE_SEARCH_YES, CALLBACK_SAVE_SEARCH_NO,
-    CALLBACK_START_LAST_SAVED_SEARCH
+    CALLBACK_START_LAST_SAVED_SEARCH,
+    CALLBACK_ENTIRE_RANGE_SELECTED
 )
 
 logger = logging.getLogger(__name__)
@@ -167,50 +168,77 @@ def generate_date_range_buttons(year: int, month: int, callback_prefix: str = ""
 
 def generate_specific_date_buttons(
         year: int, month: int, date_range_start: int, date_range_end: int,
-        callback_prefix: str = "", min_allowed_date: datetime | None = None,
-        back_callback_data: str | None = None
+        callback_prefix: str = "", # Это для callback'ов отдельных дат
+        min_allowed_date: datetime | None = None,
+        back_callback_data: str | None = None,
+        # НОВЫЙ ПАРАМЕТР для определения типа диапазона (вылет/возврат)
+        range_selection_type: str = "dep"  # "dep" или "ret"
     ) -> InlineKeyboardMarkup:
-    buttons_rows = []
-    current_row = []
+    final_button_rows = [] # Собираем все ряды кнопок здесь
+
     if min_allowed_date is None:
         min_allowed_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    
-    # Корректируем date_range_start, если он раньше min_allowed_date в том же месяце/году
-    # Это чтобы не показывать кнопки для уже прошедших дней в начальном диапазоне
-    if year == min_allowed_date.year and month == min_allowed_date.month:
-        date_range_start = max(date_range_start, min_allowed_date.day)
 
+    # Корректируем date_range_start для отображения, если он раньше min_allowed_date
+    # Это для того, чтобы не показывать кнопки для уже прошедших дней в начальном диапазоне
+    # но для кнопки "Выбрать весь диапазон" используем оригинальные date_range_start, date_range_end
+    # так как API сам отфильтрует, а пользователю может быть нужен весь указанный диапазон
+    display_range_start = date_range_start
+    if year == min_allowed_date.year and month == min_allowed_date.month:
+        display_range_start = max(date_range_start, min_allowed_date.day)
+
+    # 1. Кнопка "Выбрать весь диапазон"
+    # Формат callback: entire_range_slctd_dep_YYYY-MM-DDstart-DDend
+    # или entire_range_slctd_ret_YYYY-MM-DDstart-DDend
+    entire_range_callback_data = (
+        f"{CALLBACK_ENTIRE_RANGE_SELECTED}{range_selection_type}_"
+        f"{year}-{month:02d}-{date_range_start:02d}-{date_range_end:02d}"
+    )
+    entire_range_button_text = f"Выбрать весь диапазон {date_range_start}-{date_range_end}"
+    final_button_rows.append([InlineKeyboardButton(text=entire_range_button_text, callback_data=entire_range_callback_data)])
+
+    # 2. Кнопки для отдельных дат
+    individual_date_buttons_rows = []
+    current_row = []
     any_button_created = False
-    for day in range(date_range_start, date_range_end + 1):
+
+    for day in range(display_range_start, date_range_end + 1): # Используем display_range_start для итерации
         try:
-            date_obj = datetime(year, month, day)
-            if date_obj < min_allowed_date: continue # Пропускаем даты раньше минимально разрешенной
+            # Проверяем, что сама дата не раньше минимально разрешенной
+            current_date_obj_for_check = datetime(year, month, day)
+            if current_date_obj_for_check < min_allowed_date:
+                continue # Пропускаем даты раньше минимально разрешенной
+
             any_button_created = True
-            date_str_callback = date_obj.strftime("%Y-%m-%d")
-            display_date = date_obj.strftime("%d") # Показываем только день
-            current_row.append(InlineKeyboardButton(text=display_date, callback_data=f"{callback_prefix}{date_str_callback}"))
+            date_str_callback = current_date_obj_for_check.strftime("%Y-%m-%d") # Полная дата для callback
+            display_date_text = current_date_obj_for_check.strftime("%d") # Показываем только день
+            current_row.append(InlineKeyboardButton(text=display_date_text, callback_data=f"{callback_prefix}{date_str_callback}"))
             if len(current_row) == 5: # Количество кнопок в ряду
-                buttons_rows.append(current_row)
+                individual_date_buttons_rows.append(current_row)
                 current_row = []
-        except ValueError: # На случай невалидной даты (например, 31 февраля)
+        except ValueError:
             logger.warning(f"Попытка создать кнопку для несуществующей даты: {year}-{month}-{day}")
             continue
-    if current_row:
-        buttons_rows.append(current_row)
+    
+    if current_row: # Добавляем оставшиеся кнопки, если есть
+        individual_date_buttons_rows.append(current_row)
+    
+    final_button_rows.extend(individual_date_buttons_rows)
 
-    if not any_button_created and date_range_start <= date_range_end : # Если ни одна кнопка не была создана, но диапазон валиден
-        if not back_callback_data: # И нет кнопки "Назад"
-            buttons_rows.append([InlineKeyboardButton("Нет доступных дат в этом диапазоне", callback_data="no_specific_dates_in_range_error")])
-        elif not buttons_rows: # Если buttons_rows пуст и есть back_callback_data (т.е. все отфильтровалось)
-             buttons_rows = [] # Не добавляем кнопку "Нет дат", т.к. есть "Назад"
+    # 3. Сообщение "Нет доступных дат", если не создано ни одной кнопки для отдельных дат
+    # и диапазон display_range_start <= date_range_end был потенциально валиден
+    if not any_button_created and display_range_start <= date_range_end:
+        if not back_callback_data: # И нет кнопки "Назад", чтобы не было пусто
+            # Эта кнопка-заглушка важна, чтобы пользователь понимал, почему нет дат
+            final_button_rows.append([InlineKeyboardButton("Нет доступных дат в этом диапазоне", callback_data="no_specific_dates_in_range_error")])
+        # Если есть кнопка "Назад", то сообщение "Нет доступных дат" не добавляем,
+        # т.к. пользователь может вернуться назад. Пустая клавиатура (только с "Назад" и "Выбрать весь диапазон") допустима.
 
+    # 4. Кнопка "Назад"
     if back_callback_data:
-        if not buttons_rows and not any_button_created: # Если список кнопок пуст (например, все отфильтровано)
-             buttons_rows = [[InlineKeyboardButton(MSG_BACK, callback_data=back_callback_data)]]
-        else:
-             buttons_rows.append([InlineKeyboardButton(MSG_BACK, callback_data=back_callback_data)])
+        final_button_rows.append([InlineKeyboardButton(MSG_BACK, callback_data=back_callback_data)])
 
-    return InlineKeyboardMarkup(buttons_rows)
+    return InlineKeyboardMarkup(final_button_rows)
 
 def get_price_options_keyboard(back_callback_data: str | None = None) -> InlineKeyboardMarkup:
     keyboard = [
