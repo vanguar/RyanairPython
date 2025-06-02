@@ -2314,80 +2314,287 @@ async def flex_return_date_selected(update: Update, context: ContextTypes.DEFAUL
 
 # --- ГИБКИЙ ПОИСК - ОБРАБОТЧИКИ "НАЗАД" ДЛЯ ДАТ ---
 
+# bot/handlers.py
 async def back_flex_dep_year_to_ask_dates_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    if not query: return ConversationHandler.END
+    if not query:
+        logger.warning("back_flex_dep_year_to_ask_dates_handler вызван без query.")
+        return ConversationHandler.END
     await query.answer()
+
+    # Очищаем данные шага, с которого уходим (выбор года вылета и последующих месяцев/дат)
     context.user_data.pop('departure_year', None)
     context.user_data.pop('departure_month', None)
     context.user_data.pop('departure_date_range_str', None)
     context.user_data.pop('departure_date', None)
+    context.user_data.pop('departure_date_from', None)
+    context.user_data.pop('departure_date_to', None)
+    context.user_data.pop('is_departure_range_search', None)
 
-    back_cb_for_ask_dates = config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR
-    if context.user_data.get('arrival_airport_iata') is not None and context.user_data.get('arrival_city_name'):
+    # 1. Проверка базовых данных не так критична здесь, так как мы возвращаемся к общему вопросу о датах,
+    # но если current_search_flow не FLEX, это все равно странно.
+    if not context.user_data.get('current_search_flow') == config.FLOW_FLEX:
+        logger.warning(f"back_flex_dep_year_to_ask_dates_handler: Неверный current_search_flow. Callback: {query.data}")
+        # Можно просто завершить или перенаправить на /start
+        if query.message:
+            try: await query.edit_message_text("Произошла ошибка потока диалога. Пожалуйста, /start", reply_markup=None)
+            except Exception as e: logger.error(f"Ошибка редактирования: {e}")
+        return ConversationHandler.END
+
+
+    # 2. Возвращаемся к вопросу "Указать конкретные даты?"
+    # Определяем правильную кнопку "Назад" для следующего шага (ASK_FLEX_DATES)
+    back_cb_for_ask_dates = config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR # По умолчанию
+    # Если аэропорт прилета уже был выбран, кнопка "Назад" должна вести к нему
+    if context.user_data.get('arrival_airport_iata') and context.user_data.get('arrival_city_name'):
         back_cb_for_ask_dates = config.CB_BACK_FLEX_ASK_DATES_TO_ARR_CITY
-    elif context.user_data.get('departure_city_name') and context.user_data.get('arrival_airport_iata') is None: # Если город вылета есть, а прилета нет
+    # Если аэропорт прилета не выбран, но город вылета есть (это стандартный случай перед ASK_FLEX_DATES, если прилет не указан)
+    elif context.user_data.get('departure_city_name') and context.user_data.get('arrival_airport_iata') is None:
         back_cb_for_ask_dates = config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR
+    # Можно добавить еще условия, если есть другие пути к ASK_FLEX_DATES с разными кнопками "Назад"
 
-    await query.edit_message_text(
-        text="🗓️ Указать конкретные даты?",
-        reply_markup=keyboards.get_skip_dates_keyboard(
-            callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes",
-            back_callback_data=back_cb_for_ask_dates
-        )
-    )
+    if query.message:
+        try:
+            await query.edit_message_text(
+                text="🗓️ Указать конкретные даты вылета?",
+                reply_markup=keyboards.get_skip_dates_keyboard(
+                    callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes",
+                    back_callback_data=back_cb_for_ask_dates
+                )
+            )
+        except Exception as e_edit:
+            logger.error(f"Ошибка редактирования в back_flex_dep_year_to_ask_dates_handler: {e_edit}")
+            # Если редактирование не удалось, пытаемся отправить новое сообщение
+            if query.message and query.message.chat_id:
+                 await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text="🗓️ Указать конкретные даты вылета?",
+                    reply_markup=keyboards.get_skip_dates_keyboard(
+                        callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes",
+                        back_callback_data=back_cb_for_ask_dates
+                    )
+                )
+    else: # Если query.message нет, это неожиданно для CallbackQueryHandler
+        logger.error("back_flex_dep_year_to_ask_dates_handler: query.message отсутствует.")
+        # Попытка отправить сообщение, если есть chat_id
+        effective_chat_id = update.effective_chat.id
+        if effective_chat_id:
+            await context.bot.send_message(
+                chat_id=effective_chat_id,
+                text="🗓️ Указать конкретные даты вылета?",
+                reply_markup=keyboards.get_skip_dates_keyboard(
+                    callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes",
+                    back_callback_data=back_cb_for_ask_dates
+                )
+            )
+        else: # Крайний случай, если и chat_id не найти
+            return ConversationHandler.END
+
+
     return config.ASK_FLEX_DATES
 
+# bot/handlers.py
 async def back_flex_dep_month_to_year_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    if not query: return ConversationHandler.END
+    if not query:
+        logger.warning("back_flex_dep_month_to_year_handler вызван без query.")
+        return ConversationHandler.END
     await query.answer()
+
+    # Очищаем данные шага, с которого уходим (выбор месяца вылета и последующих дат/диапазонов)
     context.user_data.pop('departure_month', None)
     context.user_data.pop('departure_date_range_str', None)
     context.user_data.pop('departure_date', None)
+    context.user_data.pop('departure_date_from', None)
+    context.user_data.pop('departure_date_to', None)
+    context.user_data.pop('is_departure_range_search', None)
 
-    await ask_year(query, context,
-                   "🗓️ Выберите год вылета:",
-                   callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_year_",
-                   keyboard_back_callback=config.CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES)
+    # 1. Проверка базовых данных (аэропорт вылета и тип потока)
+    # Хотя для выбора года вылета они не строго нужны, но если их нет,
+    # это указывает на более глубокую проблему в потоке.
+    if not context.user_data.get('departure_airport_iata') or \
+       not context.user_data.get('current_search_flow') == config.FLOW_FLEX:
+        logger.warning(f"back_flex_dep_month_to_year_handler: Отсутствуют базовые данные. Callback: {query.data}")
+        if query.message:
+            try:
+                await query.edit_message_text(
+                    "Произошла небольшая путаница. Давайте начнем с выбора дат вылета. ✈️",
+                    reply_markup=None
+                )
+            except Exception as e_edit:
+                logger.error(f"Ошибка редактирования (нет базовых данных) в back_flex_dep_month_to_year_handler: {e_edit}")
+
+        back_cb_ask_dates = config.CB_BACK_FLEX_ASK_DATES_TO_ARR_CITY \
+                            if context.user_data.get('arrival_airport_iata') \
+                            else config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR
+        if query.message and query.message.chat_id:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="🗓️ Указать конкретные даты вылета?",
+                reply_markup=keyboards.get_skip_dates_keyboard(
+                    callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes",
+                    back_callback_data=back_cb_ask_dates
+                )
+            )
+        return config.ASK_FLEX_DATES
+
+    # 2. Возвращаемся к выбору года вылета
+    # `departure_year` будет очищен или не установлен, ask_year запросит его.
+    await ask_year(
+        message_or_update_or_query=query,
+        context=context,
+        message_text="🗓️ Выберите год вылета:",
+        callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_year_",
+        keyboard_back_callback=config.CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES # Назад к вопросу "Указать даты?"
+    )
     return config.SELECTING_FLEX_DEPARTURE_YEAR
 
+# bot/handlers.py
 async def back_flex_dep_range_to_month_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    if not query: return ConversationHandler.END
+    if not query:
+        logger.warning("back_flex_dep_range_to_month_handler вызван без query.")
+        return ConversationHandler.END
     await query.answer()
-    year = context.user_data.get('departure_year')
+
+    # Очищаем данные шага, с которого уходим (выбор диапазона дней вылета и последующей даты)
     context.user_data.pop('departure_date_range_str', None)
     context.user_data.pop('departure_date', None)
+    context.user_data.pop('departure_date_from', None) # Также очищаем, если был установлен диапазон
+    context.user_data.pop('departure_date_to', None)
+    context.user_data.pop('is_departure_range_search', None) # И флаг, если был установлен
+
+    # 1. Проверка базовых данных (аэропорт вылета и тип потока)
+    if not context.user_data.get('departure_airport_iata') or \
+       not context.user_data.get('current_search_flow') == config.FLOW_FLEX:
+        logger.warning(f"back_flex_dep_range_to_month_handler: Отсутствуют базовые данные. Callback: {query.data}")
+        if query.message:
+            try:
+                await query.edit_message_text(
+                    "Произошла небольшая путаница. Давайте начнем с выбора дат вылета. ✈️",
+                    reply_markup=None
+                )
+            except Exception as e_edit:
+                logger.error(f"Ошибка редактирования (нет базовых данных) в back_flex_dep_range_to_month_handler: {e_edit}")
+        
+        back_cb_ask_dates = config.CB_BACK_FLEX_ASK_DATES_TO_ARR_CITY \
+                            if context.user_data.get('arrival_airport_iata') \
+                            else config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR
+        if query.message and query.message.chat_id:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="🗓️ Указать конкретные даты вылета?",
+                reply_markup=keyboards.get_skip_dates_keyboard(
+                    callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes",
+                    back_callback_data=back_cb_ask_dates
+                )
+            )
+        return config.ASK_FLEX_DATES
+
+    # 2. Получаем год вылета, который должен был быть установлен ранее
+    year = context.user_data.get('departure_year')
 
     if not year:
-        await query.edit_message_text("❗Ошибка: год вылета не найден. /start")
-        return ConversationHandler.END
+        logger.warning("back_flex_dep_range_to_month_handler: Не найден год вылета (departure_year).")
+        if query.message:
+            try:
+                await query.edit_message_text(
+                    "Не удалось вернуться к выбору месяца, т.к. не определен год вылета. Давайте выберем год вылета. 📅",
+                    reply_markup=None
+                )
+            except Exception as e_edit:
+                logger.error(f"Ошибка редактирования (нет года вылета) в back_flex_dep_range_to_month_handler: {e_edit}")
+        
+        # Переводим на шаг выбора года вылета
+        await ask_year(query, context, "🗓️ Выберите год вылета:",
+                       callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_year_",
+                       keyboard_back_callback=config.CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES)
+        return config.SELECTING_FLEX_DEPARTURE_YEAR
 
-    await ask_month(query, context,
-                  year_for_months=year,
-                  message_text=f"Год вылета: {year}. 🗓️ Выберите месяц:",
-                  callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_month_",
-                  keyboard_back_callback=config.CB_BACK_FLEX_DEP_MONTH_TO_YEAR)
+    # 3. Если год есть, возвращаемся к выбору месяца вылета
+    await ask_month(
+        message_or_update_or_query=query,
+        context=context,
+        year_for_months=year,
+        message_text=f"Год вылета: {year}. 🗓️ Выберите месяц:",
+        callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_month_",
+        # departure_year/month_for_comparison здесь не нужны, т.к. мы выбираем месяц вылета, а не возврата
+        keyboard_back_callback=config.CB_BACK_FLEX_DEP_MONTH_TO_YEAR # Назад к выбору года вылета
+    )
     return config.SELECTING_FLEX_DEPARTURE_MONTH
 
+# bot/handlers.py
 async def back_flex_dep_date_to_range_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    if not query: return ConversationHandler.END
+    if not query:
+        logger.warning("back_flex_dep_date_to_range_handler вызван без query.")
+        return ConversationHandler.END
     await query.answer()
+
+    # Очищаем данные шага, с которого уходим (выбор конкретной даты вылета)
+    context.user_data.pop('departure_date', None)
+    context.user_data.pop('departure_date_from', None) # Также очищаем, если был установлен диапазон
+    context.user_data.pop('departure_date_to', None)
+    context.user_data.pop('is_departure_range_search', None)
+
+    # 1. Проверка наличия базовых данных для гибкого поиска
+    if not context.user_data.get('departure_airport_iata') or \
+       not context.user_data.get('current_search_flow') == config.FLOW_FLEX:
+        logger.warning(f"back_flex_dep_date_to_range_handler: Отсутствуют базовые данные. Callback: {query.data}")
+        if query.message:
+            try:
+                await query.edit_message_text(
+                    "Произошла небольшая путаница. Давайте начнем с выбора дат вылета. ✈️",
+                    reply_markup=None
+                )
+            except Exception as e_edit:
+                logger.error(f"Ошибка редактирования (нет базовых данных): {e_edit}")
+        
+        back_cb_ask_dates = config.CB_BACK_FLEX_ASK_DATES_TO_ARR_CITY \
+                            if context.user_data.get('arrival_airport_iata') \
+                            else config.CB_BACK_FLEX_ASK_DATES_TO_DEP_CITY_NO_ARR
+        if query.message and query.message.chat_id:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="🗓️ Указать конкретные даты вылета?",
+                reply_markup=keyboards.get_skip_dates_keyboard(
+                    callback_select_dates=config.CALLBACK_PREFIX_FLEX + "ask_dates_yes",
+                    back_callback_data=back_cb_ask_dates
+                )
+            )
+        return config.ASK_FLEX_DATES
+
+    # 2. Получаем год и месяц вылета, которые должны были быть установлены ранее
     year = context.user_data.get('departure_year')
     month = context.user_data.get('departure_month')
-    context.user_data.pop('departure_date', None)
 
     if not year or not month:
-        await query.edit_message_text("❗Ошибка: год или месяц вылета не найдены. /start")
-        return ConversationHandler.END
+        logger.warning(f"back_flex_dep_date_to_range_handler: Не найден год ({year}) или месяц ({month}) вылета.")
+        if query.message:
+            try:
+                await query.edit_message_text(
+                    "Не удалось вернуться к выбору диапазона дат вылета, т.к. не определен месяц/год. Давайте выберем год вылета. 📅",
+                    reply_markup=None
+                )
+            except Exception as e_edit: logger.error(f"Ошибка редактирования (нет года/месяца вылета): {e_edit}")
+        
+        # Переводим на шаг выбора года вылета
+        await ask_year(query, context, "🗓️ Выберите год вылета:",
+                       callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_year_",
+                       keyboard_back_callback=config.CB_BACK_FLEX_DEP_YEAR_TO_ASK_DATES)
+        return config.SELECTING_FLEX_DEPARTURE_YEAR
 
+    # 3. Если год и месяц есть, возвращаемся к выбору диапазона дней вылета
     month_name = config.RUSSIAN_MONTHS.get(month, str(month))
-    await ask_date_range(query, context, year, month,
-                       f"Выбран: {month_name} {year}. 📏 Выберите диапазон дат:",
-                       callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_range_",
-                       keyboard_back_callback=config.CB_BACK_FLEX_DEP_RANGE_TO_MONTH)
+    await ask_date_range(
+        source_update_or_query=query,
+        context=context,
+        year=year,
+        month=month,
+        message_text=f"Выбран: {month_name} {year}. 📏 Выберите диапазон дней для вылета:",
+        callback_prefix=config.CALLBACK_PREFIX_FLEX + "dep_range_",
+        keyboard_back_callback=config.CB_BACK_FLEX_DEP_RANGE_TO_MONTH # Назад к выбору месяца вылета
+    )
     return config.SELECTING_FLEX_DEPARTURE_DATE_RANGE
 
 # bot/handlers.py
