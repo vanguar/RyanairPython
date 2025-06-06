@@ -52,28 +52,26 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- ИЗМЕНЕНИЕ 2: ДОРАБАТЫВАЕМ ОБРАБОТЧИК КНОПОК ---
 async def stats_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обрабатывает нажатия кнопок, включая скачивание отчета."""
+    """Обрабатывает нажатия кнопок, включая скачивание отчета (без Markdown)."""
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except Exception as e:
+        logger.warning(f"Не удалось выполнить query.answer(): {e}")
 
     if not is_admin(query.from_user.id):
         return
 
     period = query.data.split('_')[1]
 
-    # Обработка кнопки "Скачать"
     if period == "download":
-        await query.message.reply_chat_action('upload_document') # Показываем статус "отправка файла"
-
-        # Собираем все данные параллельно для скорости
+        await query.message.reply_chat_action('upload_document')
         day_count, week_count, month_count, total_count = await asyncio.gather(
             user_stats.count_new_users("day"),
             user_stats.count_new_users("week"),
             user_stats.count_new_users("month"),
             user_stats.count_new_users("total")
         )
-
-        # Формируем текст для файла
         report_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         report_text = (
             f"Статистика пользователей бота на {report_date}\n"
@@ -83,44 +81,42 @@ async def stats_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             f"Новых за месяц: {month_count}\n"
             f"Всего пользователей: {total_count}\n"
         )
-        
-        # Создаем текстовый файл в памяти
         report_file = io.BytesIO(report_text.encode('utf-8'))
-        
-        # Генерируем имя файла с текущей датой
         filename = f"ryanair_bot_stats_{datetime.now().strftime('%Y-%m-%d')}.txt"
-        
-        # Отправляем файл как документ
         await context.bot.send_document(
             chat_id=query.message.chat_id,
             document=report_file,
             filename=filename
         )
-        return # Завершаем выполнение, так как мы отправили новый документ
-
-    # Обработка кнопки "Обновить"
-    elif period == "refresh":
-        await query.edit_message_text(
-            "📊 *Статистика новых пользователей*\nВыберите период:",
-            reply_markup=get_stats_keyboard(),
-            parse_mode="Markdown"
-        )
         return
 
-    # Логика для остальных кнопок (сегодня, неделя, месяц, всего)
-    else:
-        count = await user_stats.count_new_users(period)
-        period_rus_map = {
-            'day': 'сегодня', 'week': 'неделю', 'month': 'месяц', 'total': 'всё время'
-        }
-        period_rus = period_rus_map.get(period, '')
-        message_text = f"👤 Новых пользователей за {period_rus}: *{count}*"
-        
-        await query.edit_message_text(
-            text=message_text,
-            reply_markup=get_stats_keyboard(),
-            parse_mode="Markdown"
-        )
+    try:
+        if period == "refresh":
+            await query.edit_message_text(
+                "📊 Статистика новых пользователей\nВыберите период:",
+                reply_markup=get_stats_keyboard()
+                # Убран parse_mode
+            )
+        else:
+            count = await user_stats.count_new_users(period)
+            period_rus_map = {
+                'day': 'сегодня', 'week': 'неделю', 'month': 'месяц', 'total': 'всё время'
+            }
+            period_rus = period_rus_map.get(period, '')
+            # Убраны символы '*' для bold
+            message_text = f"👤 Новых пользователей за {period_rus}: {count}"
+            
+            await query.edit_message_text(
+                text=message_text,
+                reply_markup=get_stats_keyboard()
+                # Убран parse_mode
+            )
+            
+    except telegram.error.BadRequest as e:
+        if "Message is not modified" in str(e):
+            pass
+        else:
+            logger.error(f"Ошибка BadRequest в stats_callback_handler: {e}", exc_info=True)
 
 # Функция daily_report_job остается без изменений
 async def daily_report_job(context: ContextTypes.DEFAULT_TYPE):
@@ -132,11 +128,12 @@ async def daily_report_job(context: ContextTypes.DEFAULT_TYPE):
 
     counts = {p: await user_stats.count_new_users(p) for p in ("day", "week", "month", "total")}
     
+    # Убраны символы '*' для bold
     text = (
-        f"📈 *Ежедневная сводка по пользователям*\n\n"
-        f"Новых за сегодня: *{counts['day']}*\n"
-        f"Новых за неделю: *{counts['week']}*\n"
-        f"Всего пользователей: *{counts['total']}*"
+        f"📈 Ежедневная сводка по пользователям\n\n"
+        f"Новых за сегодня: {counts['day']}\n"
+        f"Новых за неделю: {counts['week']}\n"
+        f"Всего пользователей: {counts['total']}"
     )
     
-    await context.bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
+    await context.bot.send_message(chat_id=admin_id, text=text) # Убран parse_mode
