@@ -19,6 +19,7 @@ from typing import Dict, Any, Union
 from . import config, keyboards, helpers, flight_api, message_formatter
 from . import user_history
 from .config import PriceChoice
+from . import user_stats
 # Импортируем ВСЕ константы, включая новые CB_BACK_... и MSG_FLIGHT_TYPE_PROMPT
 from .config import (
     S_SELECTING_FLIGHT_TYPE, S_SELECTING_DEPARTURE_COUNTRY, S_SELECTING_DEPARTURE_CITY,
@@ -607,6 +608,7 @@ async def end_search_session_callback(update: Update, context: ContextTypes.DEFA
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await user_stats.touch_user(update.effective_user.id)
     context.user_data.clear()
     user_id = update.effective_user.id
     has_searches = await user_history.has_saved_searches(user_id) # <--- await
