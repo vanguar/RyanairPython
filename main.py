@@ -54,6 +54,12 @@ async def post_init(application: Application) -> None:
     # >>>>> КОНЕЦ <<<<<
     logger.info("База данных инициализирована через post_init.")
 
+# <<< НОВАЯ ФУНКЦИЯ-ОБЁРТКА >>>
+# Она принимает аргумент `application`, как того требует PTB, и вызывает нашу функцию.
+async def on_shutdown(application: Application) -> None:
+    logger.info("Выполняется остановка бота, закрытие HTTP-клиента...")
+    await fx_rates.close_client()    
+
 def main() -> None:
     """Запускает бота."""
     if not config.TELEGRAM_BOT_TOKEN:
@@ -63,7 +69,13 @@ def main() -> None:
     logger.info("Запуск бота...")
 
     # Создание экземпляра Application с post_init хуком
-    application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).post_init(post_init).build()
+    application = (
+        Application.builder()
+        .token(config.TELEGRAM_BOT_TOKEN)
+        .post_init(post_init)
+        .post_shutdown(on_shutdown)  # <-- РЕГИСТРИРУЕМ ОБЁРТКУ ЗДЕСЬ
+        .build()
+    )
 
     # ДОБАВЬТЕ ЭТУ СТРОКУ после создания application и перед application.add_handler
     # Этот хук корректно закроет HTTP-клиент при остановке бота.
