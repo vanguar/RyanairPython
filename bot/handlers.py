@@ -15,6 +15,7 @@ from collections import defaultdict
 from telegram.helpers import escape_markdown
 from decimal import Decimal, InvalidOperation
 from typing import Dict, Any, Union
+from telegram.error import BadRequest
 
 from . import config, keyboards, helpers, flight_api, message_formatter
 from . import user_history
@@ -664,52 +665,60 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def start_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    # Проверка, что query существует, добавлена для надежности
-    if not query: 
+    if not query:
         logger.warning("start_search_callback вызван без query.")
         return ConversationHandler.END
-        
-    await query.answer()
-    context.user_data.clear() # Очищаем данные предыдущей сессии
 
-    chat_id_to_send = update.effective_chat.id if update.effective_chat else None
-    if query.message and not chat_id_to_send: # Дополнительное получение chat_id если основной не сработал
-        chat_id_to_send = query.message.chat_id
-    
-    if not chat_id_to_send:
-        logger.error("start_search_callback: не удалось определить chat_id для ответа.")
-        return ConversationHandler.END
+    # --- НАЧАЛО КОМБИНИРОВАННОГО РЕШЕНИЯ ---
+    # 1. Сразу пытаемся ответить Telegram, чтобы закрыть "15-секундное окно"
+    #    и дать пользователю мгновенный отклик.
+    try:
+        # Ответ с текстом улучшает UX
+        await query.answer("🔍", cache_time=1)
+    except BadRequest as e:
+        # 2. Если кнопка старая, ловим ошибку, логируем и тихо выходим.
+        if "Query is too old" in str(e):
+            logger.warning(f"Пользователь нажал на устаревшую кнопку. Запрос проигнорирован: {e}")
+            return ConversationHandler.END
+        else:
+            # 3. Если другая ошибка BadRequest, логируем её полностью и тоже выходим.
+            logger.exception("Неожиданная ошибка BadRequest в start_search_callback")
+            return ConversationHandler.END
+    # --- КОНЕЦ КОМБИНИРОВАННОГО РЕШЕНИЯ ---
+
+    # 4. Если всё хорошо, продолжаем обычную логику функции
+    context.user_data.clear()
+
+    chat_id_to_send = update.effective_chat.id
 
     if query.message:
         try:
-            if query.data == "start_standard_search": 
+            if query.data == "start_standard_search":
                 await query.edit_message_text(text="Выбран стандартный поиск.")
-            elif query.data == "start_flex_search": 
+            elif query.data == "start_flex_search":
                 await query.edit_message_text(text="Выбран гибкий поиск.")
-        except Exception as e: 
+        except Exception as e:
             logger.warning(f"Не удалось отредактировать сообщение в start_search_callback: {e}")
-            # Если редактирование не удалось, все равно продолжаем, отправив новое сообщение ниже
 
     if query.data == "start_standard_search":
-        context.user_data['current_search_flow'] = config.FLOW_STANDARD # <--- УСТАНАВЛИВАЕМ ТИП ПОТОКА
+        context.user_data['current_search_flow'] = config.FLOW_STANDARD
         await context.bot.send_message(
-            chat_id=chat_id_to_send, 
-            text=config.MSG_FLIGHT_TYPE_PROMPT, 
+            chat_id=chat_id_to_send,
+            text=config.MSG_FLIGHT_TYPE_PROMPT,
             reply_markup=keyboards.get_flight_type_reply_keyboard()
         )
         return config.S_SELECTING_FLIGHT_TYPE
     elif query.data == "start_flex_search":
-        context.user_data['current_search_flow'] = config.FLOW_FLEX # <--- УСТАНАВЛИВАЕМ ТИП ПОТОКА
+        context.user_data['current_search_flow'] = config.FLOW_FLEX
         await context.bot.send_message(
-            chat_id=chat_id_to_send, 
-            text=config.MSG_FLIGHT_TYPE_PROMPT, 
+            chat_id=chat_id_to_send,
+            text=config.MSG_FLIGHT_TYPE_PROMPT,
             reply_markup=keyboards.get_flight_type_reply_keyboard()
         )
         return config.SELECTING_FLEX_FLIGHT_TYPE
     elif query.data == "start_flex_anywhere":
-        # current_search_flow устанавливается внутри start_flex_anywhere_callback
-        return await start_flex_anywhere_callback(update, context) # type: ignore
-        
+        return await start_flex_anywhere_callback(update, context)
+
     logger.warning(f"start_search_callback: неизвестные данные query.data: {query.data}")
     return ConversationHandler.END
 
