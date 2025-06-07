@@ -458,6 +458,8 @@ async def launch_flight_search(update: Update, context: ContextTypes.DEFAULT_TYP
 # bot/handlers.py
 # ... (после launch_flight_search) ...
 
+# bot/handlers.py
+
 async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT_TYPE, flights_by_date: Dict[str, list]) -> int:
     chat_id = update.effective_chat.id if update.effective_chat else None
     if not chat_id and update.callback_query and update.callback_query.message:
@@ -465,14 +467,11 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
     
     if not chat_id:
         logger.error("process_and_send_flights: Не удалось определить chat_id.")
-        return ConversationHandler.END # Или другая обработка ошибки
+        return ConversationHandler.END
 
-    # context.user_data.pop('remaining_flights_to_show', None) # Если у вас была такая переменная
-
-    if not flights_by_date or not any(flights_by_date.values()): # Если словарь пуст или все списки в нем пусты
+    if not flights_by_date or not any(flights_by_date.values()):
         await context.bot.send_message(chat_id=chat_id, text=config.MSG_NO_FLIGHTS_FOUND)
         
-        # Проверка возможности поиска из других аэропортов
         dep_country = context.user_data.get('departure_country')
         dep_airport_iata = context.user_data.get('departure_airport_iata')
         
@@ -487,21 +486,19 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
                 text=text_ask_other_airports,
                 reply_markup=keyboards.get_search_other_airports_keyboard(dep_country)
             )
-            return config.ASK_SEARCH_OTHER_AIRPORTS # <--- ИЗМЕНЕНИЕ: переход к вопросу о других аэропортах
+            return config.ASK_SEARCH_OTHER_AIRPORTS
         else:
-            # Если альтернативный поиск не предлагается, сразу переходим к вопросу о сохранении
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=config.MSG_ASK_SAVE_SEARCH,
                 reply_markup=keyboards.get_save_search_keyboard()
             )
-            return config.ASK_SAVE_SEARCH_PREFERENCES # <--- ИЗМЕНЕНИЕ: Новый стейт
-    else: # Рейсы найдены
+            return config.ASK_SAVE_SEARCH_PREFERENCES
+    else:
         await context.bot.send_message(chat_id=chat_id, text=config.MSG_FLIGHTS_FOUND_SEE_BELOW)
         
-        # ВАША СУЩЕСТВУЮЩАЯ ЛОГИКА ФОРМАТИРОВАНИЯ И ОТПРАВКИ НАЙДЕННЫХ РЕЙСОВ
         all_flights_with_original_date = []
-        for date_str, flights_list_item in flights_by_date.items(): # Изменил имя переменной, чтобы не конфликтовать
+        for date_str, flights_list_item in flights_by_date.items():
             for flight_obj in flights_list_item:
                 all_flights_with_original_date.append({'original_date_str': date_str, 'flight': flight_obj})
 
@@ -511,6 +508,8 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
         last_printed_date_str = None
         departure_city_name_for_weather = context.user_data.get('departure_city_name')
         arrival_city_name_for_weather = context.user_data.get('arrival_city_name')
+        
+        # <<<<<<<<<<<<<<< ВОТ ДОБАВЛЕННЫЕ СТРОКИ >>>>>>>>>>>>>>>
         departure_country_name = context.user_data.get('departure_country')
         arrival_country_name = context.user_data.get('arrival_country')
 
@@ -528,6 +527,7 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
                     flights_message_parts.append(formatted_date_header)
                     last_printed_date_str = original_date_str
             
+            # <<<<<<<<<<<<<<< ИСПРАВЛЕННЫЙ ВЫЗОВ >>>>>>>>>>>>>>>
             formatted_flight_msg = await message_formatter.format_flight_details(
                 flight,
                 departure_city_name=departure_city_name_for_weather,
@@ -539,7 +539,7 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
         
         if flights_message_parts:
             full_text = "".join(flights_message_parts)
-            if not full_text.strip(): # Если после форматирования ничего не осталось
+            if not full_text.strip():
                 await context.bot.send_message(chat_id=chat_id, text=config.MSG_NO_FLIGHTS_FOUND) 
             else:
                 max_telegram_message_length = 4096
@@ -551,16 +551,15 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
                         logger.error(f"Не удалось отправить чанк рейсов: {e_send_chunk}")
                         if i == 0: 
                              await context.bot.send_message(chat_id=chat_id, text="Произошла ошибка при отображении части результатов.")
-        else: # Если flights_message_parts пуст (маловероятно, если flights_by_date не пуст)
+        else:
             await context.bot.send_message(chat_id=chat_id, text=config.MSG_NO_FLIGHTS_FOUND)
 
-        # После отображения результатов - предлагаем сохранить поиск
         await context.bot.send_message(
             chat_id=chat_id,
             text=config.MSG_ASK_SAVE_SEARCH,
             reply_markup=keyboards.get_save_search_keyboard()
         )
-        return config.ASK_SAVE_SEARCH_PREFERENCES # <--- ИЗМЕНЕНИЕ: Новый стейт
+        return config.ASK_SAVE_SEARCH_PREFERENCES
 
 async def prompt_new_search_type_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -3264,7 +3263,7 @@ async def handle_search_other_airports_decision(update: Update, context: Context
                                 flight_alt,
                                 departure_city_name=city_name_for_current_dep_weather, # Используем текущий альтернативный город вылета
                                 arrival_city_name=original_arrival_city_name_for_weather, # Оригинальный город прилета
-                                departure_country_name=departure_country_name, # <-- Новое
+                                departure_country_name=departure_country, # <-- Новое
                                 arrival_country_name=arrival_country_name
                             )
                             alt_flights_final_message_parts.append(formatted_flight_msg)
