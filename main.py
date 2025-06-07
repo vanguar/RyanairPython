@@ -5,6 +5,7 @@ from telegram import Update # Добавлен импорт Update
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from datetime import time
 from bot import config
+from bot import fx_rates
 # Убедитесь, что handlers.py и его функции доступны для create_conversation_handler
 from bot.handlers import (
     create_conversation_handler,
@@ -49,6 +50,7 @@ async def post_init(application: Application) -> None:
     await user_history.init_db()
     # >>>>> ДОБАВЬ ИНИЦИАЛИЗАЦИЮ ТАБЛИЦЫ СТАТИСТИКИ <<<<<
     await user_stats.init_db()
+    await fx_rates.init_db()
     # >>>>> КОНЕЦ <<<<<
     logger.info("База данных инициализирована через post_init.")
 
@@ -62,6 +64,10 @@ def main() -> None:
 
     # Создание экземпляра Application с post_init хуком
     application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).post_init(post_init).build()
+
+    # ДОБАВЬТЕ ЭТУ СТРОКУ после создания application и перед application.add_handler
+    # Этот хук корректно закроет HTTP-клиент при остановке бота.
+    application.post_shutdown.append(fx_rates.close_client)
     # >>>>> ДОБАВЬ ЕЖЕДНЕВНУЮ ЗАДАЧУ (JOB QUEUE) <<<<<
     # Убедись, что ADMIN_TELEGRAM_ID задан в .env, иначе задача будет падать с ошибкой в логах
     if config.ADMIN_TELEGRAM_ID:

@@ -4,6 +4,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from typing import Dict, List, Any, Union # Добавляем Union для PriceChoice в user_data, если он будет здесь использоваться
 from collections import defaultdict
+from .config import COUNTRIES_DATA, COUNTRY_TO_CURRENCY
 
 from .config import COUNTRIES_DATA # Загрузка COUNTRIES_DATA если она тут используется
 
@@ -128,3 +129,9 @@ def get_flight_price(flight: Any) -> Decimal:
             
     logger.warning(f"Не удалось извлечь цену из объекта рейса: {flight}")
     return Decimal('inf')
+
+def get_country_currency(country_name: str) -> Union[str, None]:
+    """Возвращает код валюты для страны из словаря в конфиге."""
+    if not country_name:
+        return None
+    return COUNTRY_TO_CURRENCY.get(country_name)

@@ -3,6 +3,8 @@ import logging
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from bot import weather_api
+from bot import helpers
+from bot import fx_rates
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +14,9 @@ def _get_simple_attr(obj: any, attr_name: str, default: str = 'N/A') -> str:
 
 async def format_flight_details(flight: any,
                                 departure_city_name: str | None = None,
-                                arrival_city_name: str | None = None) -> str:
+                                arrival_city_name: str | None = None,
+                                departure_country_name: str | None = None,
+                                arrival_country_name: str | None = None) -> str:
     flight_info_parts = []
     custom_separator = "────────✈️────────\n"
     weather_separator = "--------------------\n"
@@ -235,7 +239,18 @@ async def format_flight_details(flight: any,
             else:
                 flight_info_parts.append("  В данный момент прогноз погоды недоступен.\n")
         
-
+        # <<< НАЧАЛО НОВОГО БЛОКА ДЛЯ КУРСОВ ВАЛЮТ >>>
+        rates_line = None
+        if departure_country_name and arrival_country_name:
+            origin_currency = helpers.get_country_currency(departure_country_name)
+            destination_currency = helpers.get_country_currency(arrival_country_name)
+            
+            if origin_currency and destination_currency:
+                rates_line = await fx_rates.format_rates(origin_currency, destination_currency)
+        
+        if rates_line:
+            flight_info_parts.append(rates_line)
+        # <<< КОНЕЦ НОВОГО БЛОКА ДЛЯ КУРСОВ ВАЛЮТ >>>
         #flight_info_parts.append(
         #    '☕ <b><a href="https://tronscan.org/#/address/TZ6rTYbF5Go94Q4f9uZwcVZ4g3oAnzwDHN">'
         #    'Поддержать проект в USDT (TRC-20)</a></b>\n'
@@ -251,5 +266,5 @@ async def format_flight_details(flight: any,
         return "".join(flight_info_parts)
 
     except Exception as e:
-        logger.error(f"Критическая ошибка при форматировании деталей рейса (вкл. погоду): {e}. Данные рейса: {type(flight)}", exc_info=True)
+        logger.error(f"Критическая ошибка при форматировании деталей рейса (вкл. погоду и курсы): {e}. Данные рейса: {type(flight)}", exc_info=True)
         return "Произошла ошибка при отображении информации о рейсе (вкл. погоду).\n"

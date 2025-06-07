@@ -510,6 +510,8 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
         last_printed_date_str = None
         departure_city_name_for_weather = context.user_data.get('departure_city_name')
         arrival_city_name_for_weather = context.user_data.get('arrival_city_name')
+        departure_country_name = context.user_data.get('departure_country')
+        arrival_country_name = context.user_data.get('arrival_country')
 
         for item in globally_sorted_flights_with_date:
             flight = item['flight']
@@ -528,7 +530,9 @@ async def process_and_send_flights(update: Update, context: ContextTypes.DEFAULT
             formatted_flight_msg = await message_formatter.format_flight_details(
                 flight,
                 departure_city_name=departure_city_name_for_weather,
-                arrival_city_name=arrival_city_name_for_weather
+                arrival_city_name=arrival_city_name_for_weather,
+                departure_country_name=departure_country_name,
+                arrival_country_name=arrival_country_name
             )
             flights_message_parts.append(formatted_flight_msg)
         
@@ -3250,7 +3254,9 @@ async def handle_search_other_airports_decision(update: Update, context: Context
                             formatted_flight_msg = await message_formatter.format_flight_details(
                                 flight_alt,
                                 departure_city_name=city_name_for_current_dep_weather, # Используем текущий альтернативный город вылета
-                                arrival_city_name=original_arrival_city_name_for_weather # Оригинальный город прилета
+                                arrival_city_name=original_arrival_city_name_for_weather, # Оригинальный город прилета
+                                departure_country_name=departure_country_name, # <-- Новое
+                                arrival_country_name=arrival_country_name
                             )
                             alt_flights_final_message_parts.append(formatted_flight_msg)
                         alt_flights_final_message_parts.append("\n") # Добавляем пустую строку после рейсов на одну дату

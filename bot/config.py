@@ -212,3 +212,47 @@ CB_BACK_FLEX_RET_YEAR_TO_DEP_DATE = "cb_back_flex_ret_year_to_dep_date"
 CB_BACK_FLEX_RET_MONTH_TO_YEAR = "cb_back_flex_ret_month_to_year"
 CB_BACK_FLEX_RET_RANGE_TO_MONTH = "cb_back_flex_ret_range_to_month"
 CB_BACK_FLEX_RET_DATE_TO_RANGE = "cb_back_flex_ret_date_to_range"
+
+# --- Словарь валют по странам ---
+COUNTRY_TO_CURRENCY = {
+    # Ключи точно соответствуют файлу countries_data.json
+    "Austria": "EUR",
+    "Belgium": "EUR",
+    "Bosnia & Herzegovina": "BAM", # Исправлено с "Bosnia and Herzegovina"
+    "Bulgaria": "BGN",
+    "Croatia": "EUR",
+    "Cyprus": "EUR",
+    "Czech Republic": "CZK",
+    "Denmark": "DKK",
+    "Estonia": "EUR",
+    "Finland": "EUR",
+    "France": "EUR",
+    "Germany": "EUR",
+    "Greece": "EUR",
+    "Hungary": "HUF",
+    "Ireland": "EUR",
+    "Israel": "ILS",
+    "Italy": "EUR",
+    "Jordan": "JOD",
+    "Latvia": "EUR",
+    "Lithuania": "EUR",
+    "Luxembourg": "EUR",
+    "Malta": "EUR",
+    "Montenegro": "EUR",
+    "Morocco": "MAD",
+    "Netherlands": "EUR",
+    "Norway": "NOK",
+    "Poland": "PLN",
+    "Portugal": "EUR",
+    "Romania": "RON",
+    "Serbia": "RSD",
+    "Slovakia": "EUR",
+    "Spain": "EUR",
+    "Sweden": "SEK",
+    "Switzerland": "CHF",
+    "Turkey": "TRY",
+    "United Kingdom": "GBP",
+    "Ukraine": "UAH",
+    # "Russia": "RUB", # Эти страны есть в JSON, но валюта для них не была задана
+    # "Tunisia": "TND" # Вы можете раскомментировать и добавить валюту при необходимости
+}
