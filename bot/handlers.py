@@ -3125,6 +3125,7 @@ async def handle_search_other_airports_decision(update: Update, context: Context
         departure_country = context.user_data.get('departure_country')
         original_departure_iata = context.user_data.get('departure_airport_iata')
         # original_arrival_city_name_for_weather уже получаем ниже, перед циклом
+        arrival_country_name = context.user_data.get('arrival_country')
 
         # --- НАЧАЛО ИЗМЕНЕНИЙ: Получение всех параметров дат ---
         # Эти параметры должны быть уже в context.user_data после первоначального выбора пользователя
