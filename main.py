@@ -77,9 +77,6 @@ def main() -> None:
         .build()
     )
 
-    # ДОБАВЬТЕ ЭТУ СТРОКУ после создания application и перед application.add_handler
-    # Этот хук корректно закроет HTTP-клиент при остановке бота.
-    application.post_shutdown.append(fx_rates.close_client)
     # >>>>> ДОБАВЬ ЕЖЕДНЕВНУЮ ЗАДАЧУ (JOB QUEUE) <<<<<
     # Убедись, что ADMIN_TELEGRAM_ID задан в .env, иначе задача будет падать с ошибкой в логах
     if config.ADMIN_TELEGRAM_ID:
