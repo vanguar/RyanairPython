@@ -2,6 +2,7 @@
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
+from telegram.error import BadRequest
 
 from . import config, keyboards, user_history
 
@@ -10,6 +11,15 @@ logger = logging.getLogger(__name__)
 async def handle_save_search_preference_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, launch_flight_search_func) -> int:
     query = update.callback_query
     if not query:
+        return ConversationHandler.END
+
+    try:
+        await query.answer()
+    except BadRequest as e:
+        if "Query is too old" in str(e):
+            logger.warning(f"Нажата устаревшая кнопка 'Сохранить поиск': {e}")
+            return ConversationHandler.END
+        logger.exception("BadRequest в handle_save_search_preference_callback")
         return ConversationHandler.END
 
     await query.answer()
@@ -61,6 +71,15 @@ async def handle_save_search_preference_callback(update: Update, context: Contex
 async def start_last_saved_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, launch_flight_search_func) -> int:
     query = update.callback_query
     if not query:
+        return ConversationHandler.END
+    
+    try:
+        await query.answer()
+    except BadRequest as e:
+        if "Query is too old" in str(e):
+            logger.warning(f"Нажата устаревшая кнопка 'Последний поиск': {e}")
+            return ConversationHandler.END
+        logger.exception("BadRequest в start_last_saved_search_callback")
         return ConversationHandler.END
     
     await query.answer()

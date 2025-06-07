@@ -6,6 +6,7 @@ import asyncio  # <-- ДОБАВЛЯЕМ ДЛЯ ПАРАЛЛЕЛЬНОГО СБ�
 from datetime import datetime  # <-- ДОБАВЛЯЕМ ДЛЯ ДАТЫ В ИМЕНИ ФАЙЛА
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+from telegram.error import BadRequest
 
 from . import config
 from . import user_stats
@@ -56,8 +57,15 @@ async def stats_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     try:
         await query.answer()
+    except BadRequest as e:
+        if "Query is too old" in str(e):
+            logger.warning(f"Нажата устаревшая кнопка в админ-панели: {e}")
+            return # Просто выходим, так как это не ConversationHandler
+        else:
+            logger.error(f"Ошибка BadRequest в админ-панели: {e}", exc_info=True)
+            return # Просто выходим
     except Exception as e:
-        logger.warning(f"Не удалось выполнить query.answer(): {e}")
+        logger.warning(f"Не удалось выполнить query.answer() в админ-панели: {e}")
 
     if not is_admin(query.from_user.id):
         return
