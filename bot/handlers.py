@@ -612,7 +612,10 @@ async def end_search_session_callback(update: Update, context: ContextTypes.DEFA
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await user_stats.touch_user(update.effective_user.id)
+    await user_stats.touch_user(
+    update.effective_user.id,
+    update.effective_user.username,   # Передаём username, он может быть None
+    )
     context.user_data.clear()
     user_id = update.effective_user.id
     has_searches = await user_history.has_saved_searches(user_id) # <--- await
