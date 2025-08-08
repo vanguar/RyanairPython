@@ -8,9 +8,20 @@ from bot import fx_rates
 from pathlib import Path
 
 # === карта IATA → city ======================================================
-_AIRPORTS_PATH = Path(__file__).resolve().parent / "airports_raw.json"
-with _AIRPORTS_PATH.open("r", encoding="utf-8") as fh:
-    AIRPORTS_BY_IATA = {rec["iata"]: rec["city"] for rec in json.load(fh)}
+# пытаемся найти airports_raw.json сначала рядом с bot/, затем в корне проекта
+_ROOT = Path(__file__).resolve().parent.parent           # /app
+_CANDIDATES = [
+    Path(__file__).resolve().parent / "airports_raw.json",  # /app/bot/airports_raw.json
+    _ROOT / "airports_raw.json",                           # /app/airports_raw.json
+]
+
+AIRPORTS_BY_IATA = {}
+for _p in _CANDIDATES:
+    if _p.exists():
+        with _p.open("r", encoding="utf-8") as fh:
+            AIRPORTS_BY_IATA = {rec["iata"]: rec["city"] for rec in json.load(fh)}
+        break
+
 logger = logging.getLogger(__name__)
 
 def _get_simple_attr(obj: any, attr_name: str, default: str = 'N/A') -> str:
