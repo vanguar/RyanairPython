@@ -73,6 +73,11 @@ async def handle_scope_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if q.data == config.CALLBACK_TOP3_FROM_ANYWHERE:
         context.user_data["top3_from_anywhere"] = True
+        context.user_data["airport_pool"]       = config.POPULAR_DEPARTURE_AIRPORTS.copy()
+
+        await q.edit_message_text(
+            "🌍 Ищу лучшие направления из популярных европейских хабов…"
+        )
         return await execute_search(update, context)
 
     if q.data == config.CALLBACK_TOP3_SPECIFIC_CITY:
@@ -123,38 +128,62 @@ async def execute_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     chat_id = update.effective_chat.id
     await context.bot.send_message(chat_id, "🔍 Ищу топ-3…")
 
-    flights = await flight_api.get_cheapest_flights_top3(context.user_data, limit=3)
-    if not flights:
-        await context.bot.send_message(chat_id, "😔 Ничего не нашёл, попробуйте позже.")
+    # определяем, один аэропорт или пул
+    airport_pool = context.user_data.get("airport_pool")
+    all_flights: list[dict] = []
+
+    if airport_pool:
+        # перебираем первые N хабов (чтобы не делать десятки запросов)
+        for dep_iata in airport_pool[:5]:
+            tmp_params          = context.user_data.copy()
+            tmp_params["departure_airport_iata"] = dep_iata
+            flights             = await flight_api.get_cheapest_flights_top3(tmp_params, limit=10)
+            if flights:
+                all_flights.extend(flights)
+    else:
+        flights = await flight_api.get_cheapest_flights_top3(context.user_data, limit=3)
+        all_flights.extend(flights)
+
+    if not all_flights:
+        await context.bot.send_message(chat_id, "😔 Ничего дешёвого не нашёл, попробуйте позже.")
         return ConversationHandler.END
 
-    from_text = "отовсюду" if context.user_data.get("top3_from_anywhere") else context.user_data.get("departure_city_name", "—")
+    # сортируем агрегированный пул по цене
+    all_flights.sort(key=lambda x: x["price"])
+    top3 = all_flights[:3]
 
-    await context.bot.send_message(chat_id,
+    from_text = "популярных европейских хабов" if airport_pool else context.user_data.get(
+        "departure_city_name", "—")
+
+    await context.bot.send_message(
+        chat_id,
         f"🔥 <b>Топ-3 самых дешёвых направлений</b>\nИз: {from_text}\n",
         parse_mode="HTML"
     )
 
-    for idx, item in enumerate(flights, 1):
+    for idx, item in enumerate(top3, 1):
         formatted = await message_formatter.format_flight_details(item["flight"])
-        await context.bot.send_message(chat_id,
+        await context.bot.send_message(
+            chat_id,
             f"🏆 <b>#{idx}</b>\n{formatted}",
             parse_mode="HTML",
             disable_web_page_preview=True
         )
 
-    # спросить о сохранении
+    # спрашиваем о сохранении
     kb = keyboards.get_yes_no_keyboard(
         yes_callback=config.CALLBACK_TOP3_SAVE_YES,
         no_callback=config.CALLBACK_TOP3_SAVE_NO,
         yes_text="💾 Сохранить",
         no_text="❌ Не сохранять"
     )
-    await context.bot.send_message(chat_id,
+    await context.bot.send_message(
+        chat_id,
         "💾 Сохранить эти параметры и предлагать их при следующем нажатии «Топ-3»?",
         reply_markup=kb
     )
     return config.TOP3_ASK_SAVE
+
 
 async def handle_save_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     q = update.callback_query
@@ -176,3 +205,5 @@ async def cancel_top3(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await update.message.reply_text("🛑 Поиск Top-3 отменён.", reply_markup=ReplyKeyboardRemove())
     context.user_data.clear()
     return ConversationHandler.END
+
+

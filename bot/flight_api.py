@@ -428,4 +428,67 @@ async def get_cheapest_flights_top3(search_params: dict, limit: int = 3) -> list
         })
     return res
 
+# ---------------------------------------------------------------------------
+# TOP-3: агрегируем рейсы из пула аэропортов и берём общую тройку
+# ---------------------------------------------------------------------------
+from decimal import Decimal
+from . import helpers, config
+
+async def get_cheapest_flights_top3(search_params: dict, limit: int = 3) -> list[dict]:
+    """
+    • Если указан departure_airport_iata – ищем из него.
+    • Если None и в user_data есть 'airport_pool' – перебираем первые 5 аэропортов этого пула.
+    • Иначе берём список config.POPULAR_DEPARTURE_AIRPORTS.
+
+    Возвращаем список словарей:
+        {"price": Decimal, "flight": FlightObj,
+         "departure_country": str, "arrival_country": str}
+    """
+    dep_iata = search_params.get("departure_airport_iata")
+    airport_pool = ([dep_iata] if dep_iata
+                    else search_params.get("airport_pool",
+                                           config.POPULAR_DEPARTURE_AIRPORTS)[:5])
+
+    flat: list[tuple[Decimal, object, str]] = []
+
+    for dep in airport_pool:
+        try:
+            flights_by_date = await find_flights_with_fallback(
+                departure_airport_iata = dep,
+                arrival_airport_iata   = search_params.get("arrival_airport_iata"),
+                departure_date_str     = search_params.get("departure_date_str"),
+                return_date_str        = search_params.get("return_date_str"),
+                is_one_way             = search_params.get("is_one_way", True),
+                max_price              = search_params.get("max_price"),
+                search_days_offset     = search_params.get("search_days_offset", 3),
+            )
+        except Exception as e:
+            logger.warning(f"Ryanair API error for {dep}: {e}")
+            continue
+
+        for flights in flights_by_date.values():
+            for fl in flights:
+                price = helpers.get_flight_price(fl)
+                if price is not None and price != Decimal('inf'):
+                    flat.append((price, fl, dep))
+
+    if not flat:
+        return []
+
+    # сортируем и берём TOP-N
+    flat.sort(key=lambda x: x[0])
+    top = flat[:limit]
+
+    res = []
+    for price, fl, dep in top:
+        arr_iata = getattr(fl, "destination", "")[-3:]
+        res.append({
+            "price": price,                 # ← ключ, который потом используется в handlers_top3
+            "flight": fl,
+            "departure_country": find_country_by_airport(dep),
+            "arrival_country":   find_country_by_airport(arr_iata),
+        })
+    return res
+
+
 
