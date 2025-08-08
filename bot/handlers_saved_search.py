@@ -95,7 +95,8 @@ async def start_last_saved_search_callback(update: Update, context: ContextTypes
         context.user_data.update(saved_params)
         # сообщим пользователю и перекинем в execute_search
         await query.edit_message_text("💾 Использую сохранённый Top-3 поиск…")
-        return await handlers_top3.execute_search(update, context)
+        await handlers_top3.execute_search(update, context)
+        return ConversationHandler.END          # НЕ возвращаем 103 наружу
     # --------------------------------------------------------------------
 
 

@@ -7,14 +7,17 @@ from bot import helpers
 from bot import fx_rates
 from pathlib import Path
 
-# --- самый верх message_formatter.py (после import Path, json) ------------
+# === добавьте / замените блок загрузки ===
 _AIRPORTS = {}
 _airports_path = Path(__file__).resolve().parent.parent / "airports_raw.json"
 if _airports_path.exists():
-    data = json.loads(_airports_path.read_text(encoding="utf-8"))
-    # data = dict: {"STN": {...}, "SZZ": {...}}
-    for code, info in data.items():
-        city_name = info.get("city") or info.get("city_name") or info.get("name")
+    raw = json.loads(_airports_path.read_text(encoding="utf-8"))
+    # raw – именно dict { "code": { "city": {...}, ... }, ... }
+    for code, info in raw.items():
+        city_name = (
+            info.get("city", {}).get("name")
+            or info.get("city")               # запасной вариант, если структура иная
+        )
         if city_name:
             _AIRPORTS[code.upper()] = city_name
 
