@@ -381,21 +381,51 @@ def find_country_by_airport(airport_iata: str) -> str:
             return country
     return ""
 
+# ---------------------------------------------------------------------------
+# TOP-3
+# ---------------------------------------------------------------------------
 async def get_cheapest_flights_top3(search_params: dict, limit: int = 3) -> list[dict]:
     """
     Возвращает list из 'limit' самых дешёвых рейсов.
-    Базируемся на ВАШЕМ уже существующем методе search_cheapest_flights().
-    Если он у вас называется иначе – подставьте реальное имя.
+    Берём пул через find_flights_with_fallback() → плоский список → сортируем.
     """
-    # --- 1. Получаем более широкий пул рейсов ------------------------------
-    # Поменяйте имя 'search_cheapest_flights' на то, которое реально есть
-    # у вас в файле и которое раньше возвращало список рейсов.
-    all_flights = await search_cheapest_flights(search_params)   # <-- фикс
+    flights_by_date = await find_flights_with_fallback(
+        departure_airport_iata = search_params.get("departure_airport_iata"),
+        arrival_airport_iata   = search_params.get("arrival_airport_iata"),
+        departure_date_str     = search_params.get("departure_date_str"),
+        return_date_str        = search_params.get("return_date_str"),
+        is_one_way             = search_params.get("is_one_way", True),
+        max_price              = search_params.get("max_price"),
+        search_days_offset     = search_params.get("search_days_offset", 3),
+    )
 
-    if not all_flights:
+    if not flights_by_date:
         return []
 
-    # --- 2. Сортируем по цене и берём нужное количество --------------------
-    all_flights.sort(key=lambda item: item["flight"]["price"])
-    return all_flights[:limit]
+    flat = []
+    for flights in flights_by_date.values():
+        for f in flights:
+            price = helpers.get_flight_price(f)
+            if price is not None:
+                flat.append((price, f))
+
+    if not flat:
+        return []
+
+    flat.sort(key=lambda x: x[0])
+    top = flat[:limit]
+
+    res = []
+    for price, flight in top:
+        dep_iata = getattr(flight, "origin", "")[-3:]
+        arr_iata = getattr(flight, "destination", "")[-3:]
+        res.append({
+            "price": price,
+            "flight": flight,
+            "departure_country": find_country_by_airport(dep_iata),
+            "arrival_country":   find_country_by_airport(arr_iata),
+            # остальные поля handlers_top3 использует по желанию
+        })
+    return res
+
 
