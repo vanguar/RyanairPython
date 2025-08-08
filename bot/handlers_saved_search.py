@@ -88,6 +88,17 @@ async def start_last_saved_search_callback(update: Update, context: ContextTypes
 
     saved_params = await user_history.get_last_saved_search(user_id)
 
+        # --- если это параметры для кнопки «Топ-3» ---------------------------
+    if saved_params and saved_params.get("current_search_flow") == config.FLOW_TOP3:
+        from . import handlers_top3
+        context.user_data.clear()
+        context.user_data.update(saved_params)
+        # сообщим пользователю и перекинем в execute_search
+        await query.edit_message_text("💾 Использую сохранённый Top-3 поиск…")
+        return await handlers_top3.execute_search(update, context)
+    # --------------------------------------------------------------------
+
+
     if saved_params:
         context.user_data.clear()
         context.user_data.update(saved_params)

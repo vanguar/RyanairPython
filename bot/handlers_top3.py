@@ -185,28 +185,33 @@ async def execute_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return config.TOP3_ASK_SAVE
 
 
-# ---------- сохранение / продолжение ----------
 async def handle_save_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Жмём «Сохранить / Не сохранять» после выдачи Top-3"""
     q = update.callback_query
     await q.answer()
 
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id
 
     if q.data == config.CALLBACK_TOP3_SAVE_YES:
         await user_history.save_search_parameters(user_id, context.user_data)
         await q.edit_message_text(config.MSG_TOP3_SAVED)
-    else:  # CALLBACK_TOP3_SAVE_NO
+    else:                                 # CALLBACK_TOP3_SAVE_NO
         await q.edit_message_text(config.MSG_TOP3_NOT_SAVED)
 
-    # показываем сразу главное меню, чтобы не «висело»-
-    main_kbd = keyboards.get_main_menu_keyboard(
-        has_saved_searches = await user_history.has_saved_searches(user_id)  # ← правильный метод
+    # есть ли вообще какие-то сохранённые поиски у пользователя
+    has_saved = await user_history.has_saved_searches(user_id)
+
+    # показываем главное меню сразу, чтобы диалог не «завис»
+    main_kb = keyboards.get_main_menu_keyboard(has_saved_searches=has_saved)
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="👇 Выберите, что делаем дальше:",
+        reply_markup=main_kb,
     )
-    await context.bot.send_message(chat_id, text="Что дальше?", reply_markup=main_kbd)
 
     context.user_data.clear()
     return ConversationHandler.END
+
 
 
 

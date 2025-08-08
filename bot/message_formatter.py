@@ -7,18 +7,18 @@ from bot import helpers
 from bot import fx_rates
 from pathlib import Path
 
-# ------------------------------------------------------------------
-# IATA --> Город (загружаем при первом импорте message_formatter)
-# ------------------------------------------------------------------
+# --- самый верх message_formatter.py (после import Path, json) ------------
 _AIRPORTS = {}
 _airports_path = Path(__file__).resolve().parent.parent / "airports_raw.json"
 if _airports_path.exists():
-    with _airports_path.open("r", encoding="utf-8") as fh:
-        for rec in json.load(fh):
-            code = rec.get("iata") or rec.get("code")  # в файле встречается либо так, либо так
-            city = rec.get("city", {}).get("name") or rec.get("city")
-            if code and city:
-                _AIRPORTS[code.upper()] = city
+    data = json.loads(_airports_path.read_text(encoding="utf-8"))
+    # data = dict: {"STN": {...}, "SZZ": {...}}
+    for code, info in data.items():
+        city_name = info.get("city") or info.get("city_name") or info.get("name")
+        if city_name:
+            _AIRPORTS[code.upper()] = city_name
+
+
 def _iata_to_city(val: str | None) -> str | None:
     """Если val = 'BGY' → вернёт 'Bergamo', иначе None."""
     if val and len(val) == 3 and val.isalpha():
