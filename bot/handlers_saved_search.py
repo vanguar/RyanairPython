@@ -68,68 +68,56 @@ async def handle_save_search_preference_callback(update: Update, context: Contex
     return ConversationHandler.END
 
 
-async def start_last_saved_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, launch_flight_search_func) -> int:
+# bot/handlers_saved_search.py
+async def start_last_saved_search_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    launch_flight_search_func,
+) -> int:
+    """Кнопка «💾 Мой последний поиск»"""
     query = update.callback_query
     if not query:
         return ConversationHandler.END
-    
-    try:
-        await query.answer()
-    except BadRequest as e:
-        if "Query is too old" in str(e):
-            logger.warning(f"Нажата устаревшая кнопка 'Последний поиск': {e}")
-            return ConversationHandler.END
-        logger.exception("BadRequest в start_last_saved_search_callback")
-        return ConversationHandler.END
-    
+
     await query.answer()
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
 
     saved_params = await user_history.get_last_saved_search(user_id)
 
-        # --- если это параметры для кнопки «Топ-3» ---------------------------
-    if saved_params and saved_params.get("current_search_flow") == config.FLOW_TOP3:
-        from . import handlers_top3
-        context.user_data.clear()
-        context.user_data.update(saved_params)
-        # сообщим пользователю и перекинем в execute_search
-        await query.edit_message_text("💾 Использую сохранённый Top-3 поиск…")
-        await handlers_top3.execute_search(update, context)
-        return ConversationHandler.END          # НЕ возвращаем 103 наружу
-    # --------------------------------------------------------------------
-
-
-    if saved_params:
-        context.user_data.clear()
-        context.user_data.update(saved_params)
-
-        load_msg = config.MSG_LOADED_SAVED_SEARCH
-        if query.message:
-            try:
-                await query.edit_message_text(load_msg)
-            except Exception:
-                await context.bot.send_message(chat_id, load_msg)
-        else:
-            await context.bot.send_message(chat_id, load_msg)
-
-        # --- если сохранён именно Top-3-flow ---
-        if saved_params.get("current_search_flow") == config.FLOW_TOP3:
-            from . import handlers_top3
-            return await handlers_top3.execute_search(update, context)
-
-        # --- иначе обычный поиск ---
-        return await launch_flight_search_func(update, context)
-    else:
-        has_any_saved = await user_history.has_saved_searches(user_id)
-        msg_to_send = config.MSG_ERROR_LOADING_SAVED_SEARCH if has_any_saved else config.MSG_NO_SAVED_SEARCHES_ON_START
-
-        main_menu_kbd = keyboards.get_main_menu_keyboard(has_saved_searches=has_any_saved)
-        if query.message:
-            try:
-                await query.edit_message_text(text=msg_to_send, reply_markup=main_menu_kbd)
-            except Exception:
-                await context.bot.send_message(chat_id=chat_id, text=msg_to_send, reply_markup=main_menu_kbd)
-        else:
-             await context.bot.send_message(chat_id=chat_id, text=msg_to_send, reply_markup=main_menu_kbd)
+    # ------------------------------------------------------------------ #
+    # 1) Нет сохранённого поиска – скажем об этом и покажем меню
+    # ------------------------------------------------------------------ #
+    if not saved_params:
+        msg = config.MSG_NO_SAVED_SEARCHES_ON_START
+        kbd = keyboards.get_main_menu_keyboard(has_saved_searches=False)
+        await query.edit_message_text(msg, reply_markup=kbd)
         return ConversationHandler.END
+
+    # ------------------------------------------------------------------ #
+    # 2) Сохранён именно Top-3 поиск
+    # ------------------------------------------------------------------ #
+    if saved_params.get("current_search_flow") == config.FLOW_TOP3:
+        from . import handlers_top3
+
+        context.user_data.clear()
+        context.user_data.update(saved_params)
+
+        await query.edit_message_text("💾 Использую сохранённый Top-3 поиск…")
+
+        # запускаем Top-3 без вопроса «Сохранить / Не сохранять»
+        await handlers_top3.execute_search(update, context, ask_save=False)
+
+        # сразу возвращаем главное меню
+        main_kbd = keyboards.get_main_menu_keyboard(has_saved_searches=True)
+        await context.bot.send_message(chat_id, "👇 Что дальше?", reply_markup=main_kbd)
+        return ConversationHandler.END
+
+    # ------------------------------------------------------------------ #
+    # 3) Любой другой тип сохранённого поиска – старый поток
+    # ------------------------------------------------------------------ #
+    context.user_data.clear()
+    context.user_data.update(saved_params)
+
+    await query.edit_message_text(config.MSG_LOADED_SAVED_SEARCH)
+    return await launch_flight_search_func(update, context)

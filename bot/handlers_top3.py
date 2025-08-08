@@ -124,23 +124,33 @@ async def handle_city_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 # ---------- поиск и вывод ----------
 
-async def execute_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+# bot/handlers_top3.py
+async def execute_search(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    ask_save: bool = True        # ← по умолчанию спрашиваем о сохранении
+) -> int:
+    """Ищем топ-3 направлений (из одного аэропорта или пула) и выводим результаты.
+
+    Параметр ask_save:
+        True  – после результатов спрашиваем «💾 / ❌».
+        False – просто показываем результаты и сразу выходим из Conversation.
+    """
     chat_id = update.effective_chat.id
     await context.bot.send_message(chat_id, "🔍 Ищу топ-3…")
 
-    # определяем, один аэропорт или пул
+    # ---------- собираем рейсы -------------------------------------------
     airport_pool = context.user_data.get("airport_pool")
     all_flights: list[dict] = []
 
-    if airport_pool:
-        # перебираем первые N хабов (чтобы не делать десятки запросов)
-        for dep_iata in airport_pool[:5]:
-            tmp_params          = context.user_data.copy()
+    if airport_pool:                                              # пул хабов
+        for dep_iata in airport_pool[:5]:                         # ограничим 5 хабов
+            tmp_params = context.user_data.copy()
             tmp_params["departure_airport_iata"] = dep_iata
-            flights             = await flight_api.get_cheapest_flights_top3(tmp_params, limit=10)
+            flights = await flight_api.get_cheapest_flights_top3(tmp_params, limit=10)
             if flights:
                 all_flights.extend(flights)
-    else:
+    else:                                                         # один аэропорт
         flights = await flight_api.get_cheapest_flights_top3(context.user_data, limit=3)
         all_flights.extend(flights)
 
@@ -148,17 +158,20 @@ async def execute_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await context.bot.send_message(chat_id, "😔 Ничего дешёвого не нашёл, попробуйте позже.")
         return ConversationHandler.END
 
-    # сортируем агрегированный пул по цене
+    # ---------- выводим топ-3 --------------------------------------------
     all_flights.sort(key=lambda x: x["price"])
     top3 = all_flights[:3]
 
-    from_text = "популярных европейских хабов" if airport_pool else context.user_data.get(
-        "departure_city_name", "—")
+    from_text = (
+        "популярных европейских хабов"
+        if airport_pool
+        else context.user_data.get("departure_city_name", "—")
+    )
 
     await context.bot.send_message(
         chat_id,
         f"🔥 <b>Топ-3 самых дешёвых направлений</b>\nИз: {from_text}\n",
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
 
     for idx, item in enumerate(top3, 1):
@@ -167,22 +180,28 @@ async def execute_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             chat_id,
             f"🏆 <b>#{idx}</b>\n{formatted}",
             parse_mode="HTML",
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
         )
 
-    # спрашиваем о сохранении
-    kb = keyboards.get_yes_no_keyboard(
-        yes_callback=config.CALLBACK_TOP3_SAVE_YES,
-        no_callback=config.CALLBACK_TOP3_SAVE_NO,
-        yes_text="💾 Сохранить",
-        no_text="❌ Не сохранять"
-    )
-    await context.bot.send_message(
-        chat_id,
-        "💾 Сохранить эти параметры и предлагать их при следующем нажатии «Топ-3»?",
-        reply_markup=kb
-    )
-    return config.TOP3_ASK_SAVE
+    # ---------- спрашиваем о сохранении -----------------------------------
+    if ask_save:
+        kb = keyboards.get_yes_no_keyboard(
+            yes_callback=config.CALLBACK_TOP3_SAVE_YES,
+            no_callback=config.CALLBACK_TOP3_SAVE_NO,
+            yes_text="💾 Сохранить",
+            no_text="❌ Не сохранять",
+        )
+        await context.bot.send_message(
+            chat_id,
+            "💾 Сохранить эти параметры и предлагать их при следующем нажатии «Топ-3»?",
+            reply_markup=kb,
+        )
+        return config.TOP3_ASK_SAVE
+
+    # ---------- если ask_save == False → сразу завершаем ------------------
+    context.user_data.clear()
+    return ConversationHandler.END
+
 
 
 async def handle_save_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
