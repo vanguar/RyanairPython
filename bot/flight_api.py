@@ -383,10 +383,19 @@ def find_country_by_airport(airport_iata: str) -> str:
 
 async def get_cheapest_flights_top3(search_params: dict, limit: int = 3) -> list[dict]:
     """
-    Обёртка над вашим уже существующим API-методом, которая
-    • принимает dict c параметрами (из context.user_data),
-    • возвращает list из limit элементов: {flight: Flight, arrival_city: str, ... }.
-    Здесь можно реализовать более сложную логику ранжирования.
+    Возвращает list из 'limit' самых дешёвых рейсов.
+    Базируемся на ВАШЕМ уже существующем методе search_cheapest_flights().
+    Если он у вас называется иначе – подставьте реальное имя.
     """
-    all_flights = await get_cheapest_flights(search_params, limit=limit)   # ваш старый метод
-    return all_flights[:limit] if all_flights else []
+    # --- 1. Получаем более широкий пул рейсов ------------------------------
+    # Поменяйте имя 'search_cheapest_flights' на то, которое реально есть
+    # у вас в файле и которое раньше возвращало список рейсов.
+    all_flights = await search_cheapest_flights(search_params)   # <-- фикс
+
+    if not all_flights:
+        return []
+
+    # --- 2. Сортируем по цене и берём нужное количество --------------------
+    all_flights.sort(key=lambda item: item["flight"]["price"])
+    return all_flights[:limit]
+
