@@ -203,7 +203,9 @@ async def handle_save_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # --- 2. Показываем главное меню бота ----------------------------------
     main_kb = keyboards.get_main_menu_keyboard(
-        has_saved_searches=await user_history.has_any_searches(user_id)
+        saved = await user_history.get_last_saved_search(user_id),
+        has_saved_searches = saved is not None
+
     )
 
     await context.bot.send_message(

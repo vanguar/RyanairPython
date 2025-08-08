@@ -5,7 +5,12 @@ from decimal import Decimal, InvalidOperation
 from bot import weather_api
 from bot import helpers
 from bot import fx_rates
+from pathlib import Path
 
+# === карта IATA → city ======================================================
+_AIRPORTS_PATH = Path(__file__).resolve().parent / "airports_raw.json"
+with _AIRPORTS_PATH.open("r", encoding="utf-8") as fh:
+    AIRPORTS_BY_IATA = {rec["iata"]: rec["city"] for rec in json.load(fh)}
 logger = logging.getLogger(__name__)
 
 def _get_simple_attr(obj: any, attr_name: str, default: str = 'N/A') -> str:
@@ -178,6 +183,14 @@ async def format_flight_details(flight: any,
         # === 4) Блок прогноза погоды ===
         dep_city_for_weather = departure_city_name
         arr_city_for_weather = arrival_city_name
+
+        # --- конвертируем IATA → город, если прилетели 3-буквенные коды ---
+        if dep_city_for_weather and len(dep_city_for_weather) == 3:
+            dep_city_for_weather = AIRPORTS_BY_IATA.get(dep_city_for_weather, dep_city_for_weather)
+
+        if arr_city_for_weather and len(arr_city_for_weather) == 3:
+            arr_city_for_weather = AIRPORTS_BY_IATA.get(arr_city_for_weather, arr_city_for_weather)
+
 
         if not dep_city_for_weather:
             origin_source = None
