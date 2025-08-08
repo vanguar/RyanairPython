@@ -155,8 +155,24 @@ async def execute_search(
         all_flights.extend(flights)
 
     if not all_flights:
-        await context.bot.send_message(chat_id, "😔 Ничего дешёвого не нашёл, попробуйте позже.")
+    # сообщаем пользователю
+        await context.bot.send_message(
+            chat_id,
+            "😔 К сожалению, сейчас ничего дешёвого не нашёл. Попробуйте позже."
+        )
+
+        # показываем главное меню сразу, чтобы пользователь не «застрял»
+        has_saved = await user_history.has_saved_searches(update.effective_user.id)
+        main_kb = keyboards.get_main_menu_keyboard(has_saved_searches=has_saved)
+        await context.bot.send_message(
+            chat_id,
+            "👇 Выберите, что делаем дальше:",
+            reply_markup=main_kb
+        )
+
+        context.user_data.clear()
         return ConversationHandler.END
+
 
     # ---------- выводим топ-3 --------------------------------------------
     all_flights.sort(key=lambda x: x["price"])
