@@ -6,6 +6,7 @@ from bot import weather_api
 from bot import helpers
 from bot import fx_rates
 from pathlib import Path
+from . import flight_api
 
 # === добавьте / замените блок загрузки ===
 _AIRPORTS = {}
@@ -275,6 +276,30 @@ async def format_flight_details(flight: any,
                 flight_info_parts.append("\n".join(weather_text_parts) + "\n")
             else:
                 flight_info_parts.append("  В данный момент прогноз погоды недоступен.\n")
+
+                # ---------- пытаемся вывести страны, если их не передали ----------
+        if not departure_country_name or not arrival_country_name:
+            # определяем IATA аэропортов вылета / прилёта
+            dep_iata = None
+            arr_iata = None
+
+            if hasattr(flight, "origin"):
+                dep_iata = flight.origin[-3:]
+            elif hasattr(flight, "outbound") and flight.outbound:
+                dep_iata = getattr(flight.outbound, "origin", "")[-3:]
+
+            if hasattr(flight, "destination"):
+                arr_iata = flight.destination[-3:]
+            elif hasattr(flight, "outbound") and flight.outbound:
+                arr_iata = getattr(flight.outbound, "destination", "")[-3:]
+
+            # через вспомогательную функцию flight_api.find_country_by_airport
+            if dep_iata and not departure_country_name:
+                departure_country_name = flight_api.find_country_by_airport(dep_iata)
+            if arr_iata and not arrival_country_name:
+                arrival_country_name = flight_api.find_country_by_airport(arr_iata)
+        # -------------------------------------------------------------------
+        
         
         # <<< НАЧАЛО НОВОГО БЛОКА ДЛЯ КУРСОВ ВАЛЮТ >>>
         rates_line = None
