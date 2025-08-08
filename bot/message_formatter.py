@@ -7,20 +7,24 @@ from bot import helpers
 from bot import fx_rates
 from pathlib import Path
 
-# === карта IATA → city ======================================================
-# пытаемся найти airports_raw.json сначала рядом с bot/, затем в корне проекта
-_ROOT = Path(__file__).resolve().parent.parent           # /app
-_CANDIDATES = [
-    Path(__file__).resolve().parent / "airports_raw.json",  # /app/bot/airports_raw.json
-    _ROOT / "airports_raw.json",                           # /app/airports_raw.json
-]
+# ------------------------------------------------------------------
+# IATA --> Город (загружаем при первом импорте message_formatter)
+# ------------------------------------------------------------------
+_AIRPORTS = {}
+_airports_path = Path(__file__).resolve().parent.parent / "airports_raw.json"
+if _airports_path.exists():
+    with _airports_path.open("r", encoding="utf-8") as fh:
+        for rec in json.load(fh):
+            code = rec.get("iata") or rec.get("code")  # в файле встречается либо так, либо так
+            city = rec.get("city", {}).get("name") or rec.get("city")
+            if code and city:
+                _AIRPORTS[code.upper()] = city
+def _iata_to_city(val: str | None) -> str | None:
+    """Если val = 'BGY' → вернёт 'Bergamo', иначе None."""
+    if val and len(val) == 3 and val.isalpha():
+        return _AIRPORTS.get(val.upper())
+    return None
 
-AIRPORTS_BY_IATA = {}
-for _p in _CANDIDATES:
-    if _p.exists():
-        with _p.open("r", encoding="utf-8") as fh:
-            AIRPORTS_BY_IATA = {rec["iata"]: rec["city"] for rec in json.load(fh)}
-        break
 
 logger = logging.getLogger(__name__)
 
@@ -192,8 +196,9 @@ async def format_flight_details(flight: any,
 
        
         # === 4) Блок прогноза погоды ===
-        dep_city_for_weather = departure_city_name
-        arr_city_for_weather = arrival_city_name
+        dep_city_for_weather = _iata_to_city(departure_city_name) or departure_city_name
+        arr_city_for_weather = _iata_to_city(arrival_city_name)   or arrival_city_name
+
 
         # --- конвертируем IATA → город, если прилетели 3-буквенные коды ---
         if dep_city_for_weather and len(dep_city_for_weather) == 3:
@@ -224,6 +229,11 @@ async def format_flight_details(flight: any,
             if destination_source:
                 dest_val = _get_simple_attr(destination_source, 'destination', '')
                 arr_city_for_weather = dest_val.split(',')[0].strip() if ',' in dest_val else dest_val
+
+        # ещё раз конвертируем IATA → город, если вдруг попал код
+        dep_city_for_weather = _iata_to_city(dep_city_for_weather) or dep_city_for_weather
+        arr_city_for_weather = _iata_to_city(arr_city_for_weather) or arr_city_for_weather
+        
 
         weather_text_parts = []
         attempted_dep_weather = False

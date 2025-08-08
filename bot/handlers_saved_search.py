@@ -90,18 +90,23 @@ async def start_last_saved_search_callback(update: Update, context: ContextTypes
 
     if saved_params:
         context.user_data.clear()
-        for key, value in saved_params.items():
-            context.user_data[key] = value
-        
-        load_message = config.MSG_LOADED_SAVED_SEARCH
+        context.user_data.update(saved_params)
+
+        load_msg = config.MSG_LOADED_SAVED_SEARCH
         if query.message:
             try:
-                await query.edit_message_text(text=load_message)
+                await query.edit_message_text(load_msg)
             except Exception:
-                await context.bot.send_message(chat_id=chat_id, text=load_message)
+                await context.bot.send_message(chat_id, load_msg)
         else:
-            await context.bot.send_message(chat_id=chat_id, text=load_message)
-        
+            await context.bot.send_message(chat_id, load_msg)
+
+        # --- если сохранён именно Top-3-flow ---
+        if saved_params.get("current_search_flow") == config.FLOW_TOP3:
+            from . import handlers_top3
+            return await handlers_top3.execute_search(update, context)
+
+        # --- иначе обычный поиск ---
         return await launch_flight_search_func(update, context)
     else:
         has_any_saved = await user_history.has_saved_searches(user_id)
