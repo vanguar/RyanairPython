@@ -186,16 +186,36 @@ async def execute_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def handle_save_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    q = update.callback_query
-    await q.answer()
-    if q.data == config.CALLBACK_TOP3_SAVE_YES:
-        await user_history.save_search_parameters(update.effective_user.id, context.user_data)
-        await q.edit_message_text(config.MSG_TOP3_SAVED)
-    else:
-        await q.edit_message_text(config.MSG_TOP3_NOT_SAVED)
+    """Обрабатывает выбор сохранения / несохранения настроек Top-3."""
+    query = update.callback_query
+    if not query:
+        return ConversationHandler.END
 
+    await query.answer()
+    user_id = update.effective_user.id
+
+    # --- 1. Сохраняем при необходимости -----------------------------------
+    if query.data == config.CALLBACK_TOP3_SAVE_YES:
+        await user_history.save_search_parameters(user_id, context.user_data)
+        await query.edit_message_text(config.MSG_TOP3_SAVED)
+    else:  # CALLBACK_TOP3_SAVE_NO
+        await query.edit_message_text(config.MSG_TOP3_NOT_SAVED)
+
+    # --- 2. Показываем главное меню бота ----------------------------------
+    main_kb = keyboards.get_main_menu_keyboard(
+        has_saved_searches=await user_history.has_any_searches(user_id)
+    )
+
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="👇 Выберите, что делаем дальше:",
+        reply_markup=main_kb
+    )
+
+    # очищаем временные данные и выходим из Top-3-Conversation
     context.user_data.clear()
     return ConversationHandler.END
+
 
 async def cancel_top3(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.callback_query:
