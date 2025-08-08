@@ -369,3 +369,24 @@ async def find_flights_with_fallback(
                     all_flights_by_date["error_grouping_year_search"].append(flight)
             return dict(all_flights_by_date)
         return {} # Если flights_for_year пуст
+    
+# ---------------------------------------------------------------------------
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ TOP-3
+# ---------------------------------------------------------------------------
+
+def find_country_by_airport(airport_iata: str) -> str:
+    """Возвращает название страны по IATA-коду аэропорта (или '' если не найден)."""
+    for country, cities in config.COUNTRIES_DATA.items():
+        if airport_iata in cities.values():
+            return country
+    return ""
+
+async def get_cheapest_flights_top3(search_params: dict, limit: int = 3) -> list[dict]:
+    """
+    Обёртка над вашим уже существующим API-методом, которая
+    • принимает dict c параметрами (из context.user_data),
+    • возвращает list из limit элементов: {flight: Flight, arrival_city: str, ... }.
+    Здесь можно реализовать более сложную логику ранжирования.
+    """
+    all_flights = await get_cheapest_flights(search_params, limit=limit)   # ваш старый метод
+    return all_flights[:limit] if all_flights else []

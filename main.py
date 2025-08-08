@@ -89,8 +89,14 @@ def main() -> None:
     # >>>>> КОНЕЦ <<<<<
 
     # Получение ConversationHandler
-    conv_handler = create_conversation_handler() # Убедитесь, что все зависимости для него (launch_flight_search) разрешены
+    conv_handler   = create_conversation_handler()
+
+    from bot.handlers import create_top3_conversation_handler   # импорт фабрики
+    top3_handler   = create_top3_conversation_handler()
+
     application.add_handler(conv_handler)
+    application.add_handler(top3_handler)      # ← добавили
+
     # >>>>> ДОБАВЬ ОБРАБОТЧИКИ ДЛЯ АДМИН-ПАНЕЛИ <<<<<
     application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CallbackQueryHandler(stats_callback_handler, pattern="^stats_"))

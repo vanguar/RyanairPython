@@ -61,6 +61,7 @@ from .config import (
     CALLBACK_START_LAST_SAVED_SEARCH, # Для entry_points в ConversationHandler
     CALLBACK_ENTIRE_RANGE_SELECTED
 )
+from . import handlers_top3    # новый файл
 
 logger = logging.getLogger(__name__)
 
@@ -3521,7 +3522,34 @@ async def handle_entire_range_selected(update: Update, context: ContextTypes.DEF
         return ConversationHandler.END
 
     # Этот return не должен достигаться, если все ветки обработаны
-    return ConversationHandler.END        
+    return ConversationHandler.END    
+
+def create_top3_conversation_handler() -> ConversationHandler:
+    """ConversationHandler для Top-3 направлений."""
+    return ConversationHandler(
+        entry_points=[CallbackQueryHandler(
+            handlers_top3.start_top3,
+            pattern=f"^{config.CALLBACK_START_TOP3}$"
+        )],
+        states={
+            config.TOP3_ASK_SCOPE: [
+                CallbackQueryHandler(
+                    handlers_top3.handle_scope_choice,
+                    pattern="^(top3_use_saved|top3_new_search|"
+                            f"{config.CALLBACK_TOP3_SPECIFIC_CITY}|{config.CALLBACK_TOP3_FROM_ANYWHERE})$"),
+            ],
+            config.TOP3_ASK_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND,
+                                                     handlers_top3.handle_country_choice)],
+            config.TOP3_ASK_CITY:    [MessageHandler(filters.TEXT & ~filters.COMMAND,
+                                                     handlers_top3.handle_city_choice)],
+            config.TOP3_ASK_SAVE:    [CallbackQueryHandler(
+                handlers_top3.handle_save_choice,
+                pattern=f"^({config.CALLBACK_TOP3_SAVE_YES}|{config.CALLBACK_TOP3_SAVE_NO})$")]
+        },
+        fallbacks=[CommandHandler("cancel", handlers_top3.cancel_top3)],
+        allow_reentry=True,
+    )
+
 
 # ИМПОРТ handlers_saved_search (ПОСЛЕ ВСЕХ ФУНКЦИЙ ЭТОГО ФАЙЛА, ПЕРЕД create_conversation_handler)
 from . import handlers_saved_search

@@ -14,23 +14,30 @@ from .config import (
     # НОВЫЕ КОНСТАНТЫ ДЛЯ ИМПОРТА:
     CALLBACK_SAVE_SEARCH_YES, CALLBACK_SAVE_SEARCH_NO,
     CALLBACK_START_LAST_SAVED_SEARCH,
+    CALLBACK_START_TOP3,
     CALLBACK_ENTIRE_RANGE_SELECTED
 )
 
 logger = logging.getLogger(__name__)
 
 def get_main_menu_keyboard(has_saved_searches: bool = False) -> InlineKeyboardMarkup:
-    """Возвращает клавиатуру с выбором типа поиска, включая "Мой последний поиск", если есть сохраненные."""
+    """
+    Главное меню бота. Вверху – новая кнопка «Топ-3 направления».
+    """
     keyboard_buttons = [
+        [InlineKeyboardButton("🔥 Топ-3 направления", callback_data=CALLBACK_START_TOP3)],
         [InlineKeyboardButton("✈️ Стандартный поиск", callback_data="start_standard_search")],
-        [InlineKeyboardButton("✨ Гибкий поиск", callback_data="start_flex_search")],
-        [InlineKeyboardButton("🎯 Найти самый дешёвый билет (куда угодно)", callback_data="start_flex_anywhere")]
+        [InlineKeyboardButton("✨ Гибкий поиск",        callback_data="start_flex_search")],
+        [InlineKeyboardButton("🎯 Найти самый дешёвый билет (куда угодно)",
+                              callback_data="start_flex_anywhere")],
     ]
     if has_saved_searches:
         keyboard_buttons.append(
-            [InlineKeyboardButton("💾 Мой последний поиск", callback_data=CALLBACK_START_LAST_SAVED_SEARCH)]
+            [InlineKeyboardButton("💾 Мой последний поиск",
+                                  callback_data=CALLBACK_START_LAST_SAVED_SEARCH)]
         )
     return InlineKeyboardMarkup(keyboard_buttons)
+
 
 def get_flight_type_reply_keyboard() -> ReplyKeyboardMarkup:
     """Клавиатура для выбора типа рейса (1 или 2)."""
