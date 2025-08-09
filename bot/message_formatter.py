@@ -1,26 +1,35 @@
 # bot/message_formatter.py
 import logging
-from datetime import datetime
+import json
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
+
 from bot import weather_api
 from bot import helpers
 from bot import fx_rates
-from pathlib import Path
 from . import flight_api
 
-# === добавьте / замените блок загрузки ===
+
+# === кэш IATA -> город ====================================================
 _AIRPORTS = {}
-_airports_path = Path(__file__).resolve().parent.parent / "airports_raw.json"
+_airports_path = Path(__file__).resolve().parent / "airports_raw.json"  # <-- ВАЖНО: parent, не parent.parent
 if _airports_path.exists():
     raw = json.loads(_airports_path.read_text(encoding="utf-8"))
-    # raw – именно dict { "code": { "city": {...}, ... }, ... }
+    # raw – dict вида: {"STN": {"city": "London" | {"name":"London"}, ...}, ...}
     for code, info in raw.items():
-        city_name = (
-            info.get("city", {}).get("name")
-            or info.get("city")               # запасной вариант, если структура иная
-        )
+        if isinstance(info.get("city"), dict):
+            city_name = info["city"].get("name")
+        else:
+            city_name = info.get("city")
         if city_name:
             _AIRPORTS[code.upper()] = city_name
+
+def _iata_to_city(val: str | None) -> str | None:
+    if val and len(val) == 3 and val.isalpha():
+        return _AIRPORTS.get(val.upper())
+    return None
+
 
 
 def _iata_to_city(val: str | None) -> str | None:
@@ -206,10 +215,11 @@ async def format_flight_details(flight: any,
 
         # --- конвертируем IATA → город, если прилетели 3-буквенные коды ---
         if dep_city_for_weather and len(dep_city_for_weather) == 3:
-            dep_city_for_weather = AIRPORTS_BY_IATA.get(dep_city_for_weather, dep_city_for_weather)
+            dep_city_for_weather = _AIRPORTS.get(dep_city_for_weather, dep_city_for_weather)
 
         if arr_city_for_weather and len(arr_city_for_weather) == 3:
-            arr_city_for_weather = AIRPORTS_BY_IATA.get(arr_city_for_weather, arr_city_for_weather)
+            arr_city_for_weather = _AIRPORTS.get(arr_city_for_weather, arr_city_for_weather)
+
 
 
         if not dep_city_for_weather:
@@ -247,7 +257,15 @@ async def format_flight_details(flight: any,
         if dep_city_for_weather and dep_city_for_weather != 'N/A' and dep_target_dt:
             attempted_dep_weather = True
             logger.debug(f"Запрос прогноза для города вылета: {dep_city_for_weather} на {dep_target_dt}")
-            dep_weather_info = await weather_api.get_weather_with_forecast(dep_city_for_weather, dep_target_dt)
+            try_dt = dep_target_dt
+            try:
+                if isinstance(dep_target_dt, datetime) and (dep_target_dt - datetime.now(timezone.utc)).days > 5:
+                    try_dt = datetime.now(timezone.utc)
+            except Exception:
+                pass
+
+            dep_weather_info = await weather_api.get_weather_with_forecast(dep_city_for_weather, try_dt)
+
             if dep_weather_info:
                 label = "сейчас" if dep_weather_info["type"] == "current" else dep_weather_info["dt"].strftime("%Y-%m-%d %H:%M")
                 weather_text_parts.append(
@@ -260,7 +278,15 @@ async def format_flight_details(flight: any,
         if arr_city_for_weather and arr_city_for_weather != 'N/A' and arr_target_dt:
             attempted_arr_weather = True
             logger.debug(f"Запрос прогноза для города прилета: {arr_city_for_weather} на {arr_target_dt}")
-            arr_weather_info = await weather_api.get_weather_with_forecast(arr_city_for_weather, arr_target_dt)
+            try_dt = arr_target_dt
+            try:
+                if isinstance(arr_target_dt, datetime) and (arr_target_dt - datetime.now(timezone.utc)).days > 5:
+                    try_dt = datetime.now(timezone.utc)
+            except Exception:
+                pass
+
+            arr_weather_info = await weather_api.get_weather_with_forecast(arr_city_for_weather, try_dt)
+
             if arr_weather_info:
                 label = "сейчас" if arr_weather_info["type"] == "current" else arr_weather_info["dt"].strftime("%Y-%m-%d %H:%M")
                 weather_text_parts.append(

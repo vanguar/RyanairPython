@@ -128,53 +128,41 @@ async def handle_city_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def execute_search(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    ask_save: bool = True        # ← по умолчанию спрашиваем о сохранении
+    ask_save: bool = True
 ) -> int:
-    """Ищем топ-3 направлений (из одного аэропорта или пула) и выводим результаты.
-
-    Параметр ask_save:
-        True  – после результатов спрашиваем «💾 / ❌».
-        False – просто показываем результаты и сразу выходим из Conversation.
-    """
     chat_id = update.effective_chat.id
     await context.bot.send_message(chat_id, "🔍 Ищу топ-3…")
 
-    # ---------- собираем рейсы -------------------------------------------
     airport_pool = context.user_data.get("airport_pool")
+    params_base = context.user_data.copy()
+    params_base.pop("is_one_way", None)
+
     all_flights: list[dict] = []
 
-    if airport_pool:                                              # пул хабов
-        for dep_iata in airport_pool[:5]:                         # ограничим 5 хабов
-            tmp_params = context.user_data.copy()
-            tmp_params["departure_airport_iata"] = dep_iata
-            flights = await flight_api.get_cheapest_flights_top3(tmp_params, limit=10)
+    # ---- только туда-обратно ----
+    if airport_pool:
+        for dep_iata in airport_pool[:5]:
+            tmp = {**params_base, "departure_airport_iata": dep_iata, "is_one_way": False,
+                   "search_days_offset": params_base.get("search_days_offset", 5)}
+            flights = await flight_api.get_cheapest_flights_top3(tmp, limit=10)
             if flights:
                 all_flights.extend(flights)
-    else:                                                         # один аэропорт
-        flights = await flight_api.get_cheapest_flights_top3(context.user_data, limit=3)
-        all_flights.extend(flights)
+    else:
+        tmp = {**params_base, "is_one_way": False,
+               "search_days_offset": params_base.get("search_days_offset", 5)}
+        flights = await flight_api.get_cheapest_flights_top3(tmp, limit=6)
+        if flights:
+            all_flights.extend(flights)
 
     if not all_flights:
-    # сообщаем пользователю
-        await context.bot.send_message(
-            chat_id,
-            "😔 К сожалению, сейчас ничего дешёвого не нашёл. Попробуйте позже."
-        )
-
-        # показываем главное меню сразу, чтобы пользователь не «застрял»
+        await context.bot.send_message(chat_id, "😔 Ничего не нашёл, попробуйте позже.")
+        # показать меню, чтобы пользователь не зависал
         has_saved = await user_history.has_saved_searches(update.effective_user.id)
         main_kb = keyboards.get_main_menu_keyboard(has_saved_searches=has_saved)
-        await context.bot.send_message(
-            chat_id,
-            "👇 Выберите, что делаем дальше:",
-            reply_markup=main_kb
-        )
-
+        await context.bot.send_message(chat_id, "👇 Выберите, что делаем дальше:", reply_markup=main_kb)
         context.user_data.clear()
         return ConversationHandler.END
 
-
-    # ---------- выводим топ-3 --------------------------------------------
     all_flights.sort(key=lambda x: x["price"])
     top3 = all_flights[:3]
 
@@ -184,14 +172,21 @@ async def execute_search(
         else context.user_data.get("departure_city_name", "—")
     )
 
+    # заголовок для RT
     await context.bot.send_message(
         chat_id,
-        f"🔥 <b>Топ-3 самых дешёвых направлений</b>\nИз: {from_text}\n",
+        f"🔁 <b>Топ-3 (в обе стороны)</b>\nИз: {from_text}\n",
         parse_mode="HTML",
     )
 
     for idx, item in enumerate(top3, 1):
-        formatted = await message_formatter.format_flight_details(item["flight"])
+        formatted = await message_formatter.format_flight_details(
+            item["flight"],
+            departure_city_name=context.user_data.get("departure_city_name"),
+            arrival_city_name=item.get("arrival_city"),
+            departure_country_name=item.get("departure_country"),
+            arrival_country_name=item.get("arrival_country"),
+        )
         await context.bot.send_message(
             chat_id,
             f"🏆 <b>#{idx}</b>\n{formatted}",
@@ -199,7 +194,6 @@ async def execute_search(
             disable_web_page_preview=True,
         )
 
-    # ---------- спрашиваем о сохранении -----------------------------------
     if ask_save:
         kb = keyboards.get_yes_no_keyboard(
             yes_callback=config.CALLBACK_TOP3_SAVE_YES,
@@ -214,9 +208,9 @@ async def execute_search(
         )
         return config.TOP3_ASK_SAVE
 
-    # ---------- если ask_save == False → сразу завершаем ------------------
     context.user_data.clear()
     return ConversationHandler.END
+
 
 
 
