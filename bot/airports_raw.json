@@ -1,0 +1,1177 @@
+{
+  "AAR": {
+    "city": {
+      "name": "Aarhus"
+    }
+  },
+  "ABZ": {
+    "city": {
+      "name": "Aberdeen"
+    }
+  },
+  "ACE": {
+    "city": {
+      "name": "Lanzarote"
+    }
+  },
+  "AGA": {
+    "city": {
+      "name": "Agadir"
+    }
+  },
+  "AGP": {
+    "city": {
+      "name": "Malaga"
+    }
+  },
+  "AHO": {
+    "city": {
+      "name": "Alghero"
+    }
+  },
+  "ALC": {
+    "city": {
+      "name": "Alicante"
+    }
+  },
+  "AMM": {
+    "city": {
+      "name": "Amman"
+    }
+  },
+  "AMS": {
+    "city": {
+      "name": "Amsterdam"
+    }
+  },
+  "AOI": {
+    "city": {
+      "name": "Ancona"
+    }
+  },
+  "ARN": {
+    "city": {
+      "name": "Stockholm"
+    }
+  },
+  "ATH": {
+    "city": {
+      "name": "Athens"
+    }
+  },
+  "BBU": {
+    "city": {
+      "name": "Bucharest"
+    }
+  },
+  "BCN": {
+    "city": {
+      "name": "Barcelona"
+    }
+  },
+  "BDS": {
+    "city": {
+      "name": "Brindisi"
+    }
+  },
+  "BEM": {
+    "city": {
+      "name": "Beni Mellal"
+    }
+  },
+  "BER": {
+    "city": {
+      "name": "Berlin"
+    }
+  },
+  "BFS": {
+    "city": {
+      "name": "Belfast"
+    }
+  },
+  "BGY": {
+    "city": {
+      "name": "Bergamo"
+    }
+  },
+  "BHX": {
+    "city": {
+      "name": "Birmingham"
+    }
+  },
+  "BIQ": {
+    "city": {
+      "name": "Biarritz"
+    }
+  },
+  "BJV": {
+    "city": {
+      "name": "Bodrum"
+    }
+  },
+  "BLQ": {
+    "city": {
+      "name": "Bologna"
+    }
+  },
+  "BNX": {
+    "city": {
+      "name": "Banja Luka"
+    }
+  },
+  "BOH": {
+    "city": {
+      "name": "Bournemouth"
+    }
+  },
+  "BOJ": {
+    "city": {
+      "name": "Burgas"
+    }
+  },
+  "BRE": {
+    "city": {
+      "name": "Bremen"
+    }
+  },
+  "BRI": {
+    "city": {
+      "name": "Bari"
+    }
+  },
+  "BRQ": {
+    "city": {
+      "name": "Brno"
+    }
+  },
+  "BRS": {
+    "city": {
+      "name": "Bristol"
+    }
+  },
+  "BRU": {
+    "city": {
+      "name": "Brussels"
+    }
+  },
+  "BSL": {
+    "city": {
+      "name": "Basel"
+    }
+  },
+  "BTS": {
+    "city": {
+      "name": "Bratislava"
+    }
+  },
+  "BUD": {
+    "city": {
+      "name": "Budapest"
+    }
+  },
+  "BVA": {
+    "city": {
+      "name": "Paris"
+    }
+  },
+  "BVE": {
+    "city": {
+      "name": "Brive"
+    }
+  },
+  "BZG": {
+    "city": {
+      "name": "Bydgoszcz"
+    }
+  },
+  "BZR": {
+    "city": {
+      "name": "Beziers"
+    }
+  },
+  "CAG": {
+    "city": {
+      "name": "Cagliari"
+    }
+  },
+  "CCF": {
+    "city": {
+      "name": "Carcassonne"
+    }
+  },
+  "CDT": {
+    "city": {
+      "name": "Castellon"
+    }
+  },
+  "CFE": {
+    "city": {
+      "name": "Clermont Ferrand"
+    }
+  },
+  "CFU": {
+    "city": {
+      "name": "Corfu"
+    }
+  },
+  "CGN": {
+    "city": {
+      "name": "Cologne"
+    }
+  },
+  "CHQ": {
+    "city": {
+      "name": "Chania"
+    }
+  },
+  "CIA": {
+    "city": {
+      "name": "Rome"
+    }
+  },
+  "CLJ": {
+    "city": {
+      "name": "Cluj"
+    }
+  },
+  "CPH": {
+    "city": {
+      "name": "Copenhagen"
+    }
+  },
+  "CRL": {
+    "city": {
+      "name": "Charleroi"
+    }
+  },
+  "CRV": {
+    "city": {
+      "name": "Crotone"
+    }
+  },
+  "CTA": {
+    "city": {
+      "name": "Catania"
+    }
+  },
+  "CUF": {
+    "city": {
+      "name": "Cuneo"
+    }
+  },
+  "CWL": {
+    "city": {
+      "name": "Cardiff"
+    }
+  },
+  "DBV": {
+    "city": {
+      "name": "Dubrovnik"
+    }
+  },
+  "DLE": {
+    "city": {
+      "name": "Dole"
+    }
+  },
+  "DLM": {
+    "city": {
+      "name": "Dalaman"
+    }
+  },
+  "DUB": {
+    "city": {
+      "name": "Dublin"
+    }
+  },
+  "EDI": {
+    "city": {
+      "name": "Edinburgh"
+    }
+  },
+  "EFL": {
+    "city": {
+      "name": "Kefalonia"
+    }
+  },
+  "EGC": {
+    "city": {
+      "name": "Bergerac"
+    }
+  },
+  "EIN": {
+    "city": {
+      "name": "Eindhoven"
+    }
+  },
+  "EMA": {
+    "city": {
+      "name": "East Midlands"
+    }
+  },
+  "ERH": {
+    "city": {
+      "name": "Errachidia"
+    }
+  },
+  "ESU": {
+    "city": {
+      "name": "Essaouira"
+    }
+  },
+  "EXT": {
+    "city": {
+      "name": "Exeter"
+    }
+  },
+  "FAO": {
+    "city": {
+      "name": "Faro"
+    }
+  },
+  "FCO": {
+    "city": {
+      "name": "Rome"
+    }
+  },
+  "FEZ": {
+    "city": {
+      "name": "Fez"
+    }
+  },
+  "FKB": {
+    "city": {
+      "name": "Karlsruhe"
+    }
+  },
+  "FMM": {
+    "city": {
+      "name": "Memmingen"
+    }
+  },
+  "FMO": {
+    "city": {
+      "name": "Münster"
+    }
+  },
+  "FNC": {
+    "city": {
+      "name": "Funchal"
+    }
+  },
+  "FNI": {
+    "city": {
+      "name": "Nimes"
+    }
+  },
+  "FRL": {
+    "city": {
+      "name": "Bologna"
+    }
+  },
+  "FSC": {
+    "city": {
+      "name": "Figari"
+    }
+  },
+  "FUE": {
+    "city": {
+      "name": "Fuerteventura"
+    }
+  },
+  "GDN": {
+    "city": {
+      "name": "Gdansk"
+    }
+  },
+  "GLA": {
+    "city": {
+      "name": "Glasgow"
+    }
+  },
+  "GNB": {
+    "city": {
+      "name": "Grenoble"
+    }
+  },
+  "GOA": {
+    "city": {
+      "name": "Genoa"
+    }
+  },
+  "GOT": {
+    "city": {
+      "name": "Gothenburg"
+    }
+  },
+  "GPA": {
+    "city": {
+      "name": "Araxos"
+    }
+  },
+  "GRO": {
+    "city": {
+      "name": "Girona"
+    }
+  },
+  "HAM": {
+    "city": {
+      "name": "Hamburg"
+    }
+  },
+  "HEL": {
+    "city": {
+      "name": "Helsinki"
+    }
+  },
+  "HER": {
+    "city": {
+      "name": "Heraklion"
+    }
+  },
+  "HHN": {
+    "city": {
+      "name": "Frankfurt"
+    }
+  },
+  "IAS": {
+    "city": {
+      "name": "IASI"
+    }
+  },
+  "IBZ": {
+    "city": {
+      "name": "Ibiza"
+    }
+  },
+  "INI": {
+    "city": {
+      "name": "Nis"
+    }
+  },
+  "JMK": {
+    "city": {
+      "name": "Mykonos"
+    }
+  },
+  "JSI": {
+    "city": {
+      "name": "Skiathos"
+    }
+  },
+  "JTR": {
+    "city": {
+      "name": "Santorini"
+    }
+  },
+  "KGS": {
+    "city": {
+      "name": "Kos"
+    }
+  },
+  "KIR": {
+    "city": {
+      "name": "Kerry"
+    }
+  },
+  "KLU": {
+    "city": {
+      "name": "Klagenfurt"
+    }
+  },
+  "KLX": {
+    "city": {
+      "name": "Kalamata"
+    }
+  },
+  "KRK": {
+    "city": {
+      "name": "Krakow"
+    }
+  },
+  "KSC": {
+    "city": {
+      "name": "Kosice"
+    }
+  },
+  "KTW": {
+    "city": {
+      "name": "Katowice"
+    }
+  },
+  "KUN": {
+    "city": {
+      "name": "Kaunas"
+    }
+  },
+  "LBA": {
+    "city": {
+      "name": "Leeds"
+    }
+  },
+  "LBC": {
+    "city": {
+      "name": "Hamburg"
+    }
+  },
+  "LCA": {
+    "city": {
+      "name": "Larnaca"
+    }
+  },
+  "LCJ": {
+    "city": {
+      "name": "Lodz"
+    }
+  },
+  "LDE": {
+    "city": {
+      "name": "Lourdes"
+    }
+  },
+  "LDY": {
+    "city": {
+      "name": "Derry"
+    }
+  },
+  "LEI": {
+    "city": {
+      "name": "Almeria"
+    }
+  },
+  "LGW": {
+    "city": {
+      "name": "London"
+    }
+  },
+  "LIG": {
+    "city": {
+      "name": "Limoges"
+    }
+  },
+  "LIL": {
+    "city": {
+      "name": "Lille"
+    }
+  },
+  "LIS": {
+    "city": {
+      "name": "Lisbon"
+    }
+  },
+  "LNZ": {
+    "city": {
+      "name": "Linz"
+    }
+  },
+  "LPA": {
+    "city": {
+      "name": "Gran Canaria"
+    }
+  },
+  "LPL": {
+    "city": {
+      "name": "Liverpool"
+    }
+  },
+  "LPP": {
+    "city": {
+      "name": "Lappeenranta"
+    }
+  },
+  "LRH": {
+    "city": {
+      "name": "La Rochelle"
+    }
+  },
+  "LTN": {
+    "city": {
+      "name": "London"
+    }
+  },
+  "LUX": {
+    "city": {
+      "name": "Luxembourg"
+    }
+  },
+  "LUZ": {
+    "city": {
+      "name": "Lublin"
+    }
+  },
+  "LXS": {
+    "city": {
+      "name": "Lemnos"
+    }
+  },
+  "MAD": {
+    "city": {
+      "name": "Madrid"
+    }
+  },
+  "MAH": {
+    "city": {
+      "name": "Menorca"
+    }
+  },
+  "MAN": {
+    "city": {
+      "name": "Manchester"
+    }
+  },
+  "MLA": {
+    "city": {
+      "name": "Malta"
+    }
+  },
+  "MME": {
+    "city": {
+      "name": "Newcastle"
+    }
+  },
+  "MMX": {
+    "city": {
+      "name": "Malmo"
+    }
+  },
+  "MRS": {
+    "city": {
+      "name": "Marseille"
+    }
+  },
+  "MST": {
+    "city": {
+      "name": "Maastricht"
+    }
+  },
+  "MXP": {
+    "city": {
+      "name": "Milan"
+    }
+  },
+  "NAP": {
+    "city": {
+      "name": "Naples"
+    }
+  },
+  "NCE": {
+    "city": {
+      "name": "Nice"
+    }
+  },
+  "NCL": {
+    "city": {
+      "name": "Newcastle"
+    }
+  },
+  "NDR": {
+    "city": {
+      "name": "Nador"
+    }
+  },
+  "NOC": {
+    "city": {
+      "name": "Knock"
+    }
+  },
+  "NQY": {
+    "city": {
+      "name": "Newquay"
+    }
+  },
+  "NRN": {
+    "city": {
+      "name": "Dusseldorf"
+    }
+  },
+  "NTE": {
+    "city": {
+      "name": "Nantes"
+    }
+  },
+  "NUE": {
+    "city": {
+      "name": "Nuremberg"
+    }
+  },
+  "NWI": {
+    "city": {
+      "name": "Norwich"
+    }
+  },
+  "OLB": {
+    "city": {
+      "name": "Olbia"
+    }
+  },
+  "OPO": {
+    "city": {
+      "name": "Porto"
+    }
+  },
+  "ORB": {
+    "city": {
+      "name": "Örebro"
+    }
+  },
+  "ORK": {
+    "city": {
+      "name": "Cork"
+    }
+  },
+  "OSI": {
+    "city": {
+      "name": "Osijek"
+    }
+  },
+  "OSL": {
+    "city": {
+      "name": "Oslo"
+    }
+  },
+  "OSR": {
+    "city": {
+      "name": "Ostrava"
+    }
+  },
+  "OTP": {
+    "city": {
+      "name": "Bucharest"
+    }
+  },
+  "OUD": {
+    "city": {
+      "name": "Oujda"
+    }
+  },
+  "OVD": {
+    "city": {
+      "name": "Oviedo"
+    }
+  },
+  "OZZ": {
+    "city": {
+      "name": "Ouarzazate"
+    }
+  },
+  "PAD": {
+    "city": {
+      "name": "Paderborn"
+    }
+  },
+  "PDL": {
+    "city": {
+      "name": "Ponta Delgada"
+    }
+  },
+  "PDV": {
+    "city": {
+      "name": "Plovdiv"
+    }
+  },
+  "PED": {
+    "city": {
+      "name": "Pardubice"
+    }
+  },
+  "PEG": {
+    "city": {
+      "name": "Perugia"
+    }
+  },
+  "PFO": {
+    "city": {
+      "name": "Paphos"
+    }
+  },
+  "PGF": {
+    "city": {
+      "name": "Perpignan"
+    }
+  },
+  "PIK": {
+    "city": {
+      "name": "Glasgow"
+    }
+  },
+  "PIS": {
+    "city": {
+      "name": "Poitiers"
+    }
+  },
+  "PLQ": {
+    "city": {
+      "name": "Palanga"
+    }
+  },
+  "PMF": {
+    "city": {
+      "name": "Parma"
+    }
+  },
+  "PMI": {
+    "city": {
+      "name": "Palma"
+    }
+  },
+  "PMO": {
+    "city": {
+      "name": "Palermo"
+    }
+  },
+  "POZ": {
+    "city": {
+      "name": "Poznan"
+    }
+  },
+  "PRG": {
+    "city": {
+      "name": "Prague"
+    }
+  },
+  "PSA": {
+    "city": {
+      "name": "Pisa"
+    }
+  },
+  "PSR": {
+    "city": {
+      "name": "Pescara"
+    }
+  },
+  "PUY": {
+    "city": {
+      "name": "Pula"
+    }
+  },
+  "PVK": {
+    "city": {
+      "name": "Preveza"
+    }
+  },
+  "QSR": {
+    "city": {
+      "name": "Salerno "
+    }
+  },
+  "RAK": {
+    "city": {
+      "name": "Marrakesh"
+    }
+  },
+  "RBA": {
+    "city": {
+      "name": "Rabat"
+    }
+  },
+  "RDZ": {
+    "city": {
+      "name": "Rodez"
+    }
+  },
+  "REG": {
+    "city": {
+      "name": "Reggio Calabria"
+    }
+  },
+  "REU": {
+    "city": {
+      "name": "Reus"
+    }
+  },
+  "RHO": {
+    "city": {
+      "name": "Rhodes"
+    }
+  },
+  "RIX": {
+    "city": {
+      "name": "Riga"
+    }
+  },
+  "RJK": {
+    "city": {
+      "name": "Rijeka"
+    }
+  },
+  "RMI": {
+    "city": {
+      "name": "Rimini"
+    }
+  },
+  "RMU": {
+    "city": {
+      "name": "Murcia"
+    }
+  },
+  "RVN": {
+    "city": {
+      "name": "Rovaniemi"
+    }
+  },
+  "RZE": {
+    "city": {
+      "name": "Rzeszow"
+    }
+  },
+  "SCQ": {
+    "city": {
+      "name": "Santiago"
+    }
+  },
+  "SDR": {
+    "city": {
+      "name": "Santander"
+    }
+  },
+  "SFT": {
+    "city": {
+      "name": "Skelleftea"
+    }
+  },
+  "SJJ": {
+    "city": {
+      "name": "Sarajevo"
+    }
+  },
+  "SKG": {
+    "city": {
+      "name": "Thessaloniki"
+    }
+  },
+  "SNN": {
+    "city": {
+      "name": "Shannon"
+    }
+  },
+  "SOF": {
+    "city": {
+      "name": "Sofia"
+    }
+  },
+  "SPU": {
+    "city": {
+      "name": "Split"
+    }
+  },
+  "STN": {
+    "city": {
+      "name": "London"
+    }
+  },
+  "SUF": {
+    "city": {
+      "name": "Lamezia"
+    }
+  },
+  "SVQ": {
+    "city": {
+      "name": "Seville"
+    }
+  },
+  "SXB": {
+    "city": {
+      "name": "Strasbourg"
+    }
+  },
+  "SZG": {
+    "city": {
+      "name": "Salzburg"
+    }
+  },
+  "SZY": {
+    "city": {
+      "name": "Olsztyn"
+    }
+  },
+  "SZZ": {
+    "city": {
+      "name": "Szczecin"
+    }
+  },
+  "TAT": {
+    "city": {
+      "name": "Poprad - Tatry (Tatra Mountains)"
+    }
+  },
+  "TER": {
+    "city": {
+      "name": "Terceira"
+    }
+  },
+  "TFN": {
+    "city": {
+      "name": "Tenerife"
+    }
+  },
+  "TFS": {
+    "city": {
+      "name": "Tenerife"
+    }
+  },
+  "TGD": {
+    "city": {
+      "name": "Podgorica"
+    }
+  },
+  "TIA": {
+    "city": {
+      "name": "Tirana"
+    }
+  },
+  "TLL": {
+    "city": {
+      "name": "Tallinn"
+    }
+  },
+  "TLS": {
+    "city": {
+      "name": "Toulouse"
+    }
+  },
+  "TLV": {
+    "city": {
+      "name": "Tel Aviv"
+    }
+  },
+  "TNG": {
+    "city": {
+      "name": "Tangier"
+    }
+  },
+  "TPS": {
+    "city": {
+      "name": "Trapani"
+    }
+  },
+  "TRF": {
+    "city": {
+      "name": "Sandefjord"
+    }
+  },
+  "TRN": {
+    "city": {
+      "name": "Turin"
+    }
+  },
+  "TRS": {
+    "city": {
+      "name": "Trieste"
+    }
+  },
+  "TSF": {
+    "city": {
+      "name": "Venice"
+    }
+  },
+  "TTU": {
+    "city": {
+      "name": "Tétouan"
+    }
+  },
+  "TUF": {
+    "city": {
+      "name": "Tours"
+    }
+  },
+  "VAR": {
+    "city": {
+      "name": "Varna"
+    }
+  },
+  "VCE": {
+    "city": {
+      "name": "Venice"
+    }
+  },
+  "VGO": {
+    "city": {
+      "name": "Vigo"
+    }
+  },
+  "VIE": {
+    "city": {
+      "name": "Vienna"
+    }
+  },
+  "VIL": {
+    "city": {
+      "name": "Dakhla"
+    }
+  },
+  "VIT": {
+    "city": {
+      "name": "Vitoria-Gasteiz"
+    }
+  },
+  "VLC": {
+    "city": {
+      "name": "Valencia"
+    }
+  },
+  "VNO": {
+    "city": {
+      "name": "Vilnius"
+    }
+  },
+  "VOL": {
+    "city": {
+      "name": "Volos"
+    }
+  },
+  "VRN": {
+    "city": {
+      "name": "Verona"
+    }
+  },
+  "VST": {
+    "city": {
+      "name": "Stockholm"
+    }
+  },
+  "VXO": {
+    "city": {
+      "name": "Växjö"
+    }
+  },
+  "WAW": {
+    "city": {
+      "name": "Warsaw"
+    }
+  },
+  "WMI": {
+    "city": {
+      "name": "Warsaw"
+    }
+  },
+  "WRO": {
+    "city": {
+      "name": "Wroclaw"
+    }
+  },
+  "XCR": {
+    "city": {
+      "name": "Paris"
+    }
+  },
+  "ZAD": {
+    "city": {
+      "name": "Zadar"
+    }
+  },
+  "ZAG": {
+    "city": {
+      "name": "Zagreb"
+    }
+  },
+  "ZAZ": {
+    "city": {
+      "name": "Zaragoza"
+    }
+  },
+  "ZTH": {
+    "city": {
+      "name": "Zakynthos"
+    }
+  }
+}

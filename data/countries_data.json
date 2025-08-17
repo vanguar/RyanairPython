@@ -1,12 +1,11 @@
 {
   "Denmark": {
-    "Aalborg": "AAL",
     "Aarhus": "AAR",
-    "Billund": "BLL",
     "Copenhagen": "CPH"
   },
   "United Kingdom": {
     "Aberdeen": "ABZ",
+    "Belfast": "BFS",
     "Birmingham": "BHX",
     "Bournemouth": "BOH",
     "Bristol": "BRS",
@@ -21,7 +20,8 @@
     "Liverpool": "LPL",
     "Manchester": "MAN",
     "Newcastle": "NCL",
-    "Newquay": "NQY"
+    "Newquay": "NQY",
+    "Norwich": "NWI"
   },
   "Spain": {
     "Lanzarote": "ACE",
@@ -36,24 +36,23 @@
     "Gran Canaria": "LPA",
     "Madrid": "MAD",
     "Menorca": "MAH",
+    "Oviedo": "OVD",
     "Palma": "PMI",
     "Reus": "REU",
     "Murcia": "RMU",
     "Santiago": "SCQ",
     "Santander": "SDR",
-    "La Palma": "SPC",
     "Seville": "SVQ",
     "Tenerife": "TFS",
     "Vigo": "VGO",
     "Vitoria-Gasteiz": "VIT",
     "Valencia": "VLC",
-    "Valladolid": "VLL",
-    "Jerez": "XRY",
     "Zaragoza": "ZAZ"
   },
   "Morocco": {
     "Agadir": "AGA",
-    "Casablanca": "CMN",
+    "Beni Mellal": "BEM",
+    "Errachidia": "ERH",
     "Essaouira": "ESU",
     "Fez": "FEZ",
     "Nador": "NDR",
@@ -62,29 +61,32 @@
     "Marrakesh": "RAK",
     "Rabat": "RBA",
     "Tangier": "TNG",
-    "Tétouan": "TTU"
+    "Tétouan": "TTU",
+    "Dakhla": "VIL"
   },
   "Italy": {
     "Alghero": "AHO",
     "Ancona": "AOI",
     "Brindisi": "BDS",
     "Bergamo": "BGY",
-    "Bologna": "BLQ",
+    "Bologna": "FRL",
     "Bari": "BRI",
     "Cagliari": "CAG",
     "Rome": "FCO",
-    "Comiso": "CIY",
     "Crotone": "CRV",
     "Catania": "CTA",
     "Cuneo": "CUF",
     "Genoa": "GOA",
     "Milan": "MXP",
     "Naples": "NAP",
+    "Olbia": "OLB",
     "Perugia": "PEG",
     "Parma": "PMF",
     "Palermo": "PMO",
     "Pisa": "PSA",
     "Pescara": "PSR",
+    "Salerno ": "QSR",
+    "Reggio Calabria": "REG",
     "Rimini": "RMI",
     "Lamezia": "SUF",
     "Trapani": "TPS",
@@ -94,8 +96,7 @@
     "Verona": "VRN"
   },
   "Jordan": {
-    "Amman": "AMM",
-    "Aqaba": "AQJ"
+    "Amman": "AMM"
   },
   "Netherlands": {
     "Amsterdam": "AMS",
@@ -105,11 +106,9 @@
   "Sweden": {
     "Stockholm": "VST",
     "Gothenburg": "GOT",
-    "Luleå": "LLA",
     "Malmo": "MMX",
     "Örebro": "ORB",
     "Skelleftea": "SFT",
-    "Visby": "VBY",
     "Växjö": "VXO"
   },
   "Greece": {
@@ -117,36 +116,40 @@
     "Corfu": "CFU",
     "Chania": "CHQ",
     "Kefalonia": "EFL",
+    "Araxos": "GPA",
     "Heraklion": "HER",
     "Mykonos": "JMK",
     "Skiathos": "JSI",
     "Santorini": "JTR",
     "Kos": "KGS",
     "Kalamata": "KLX",
+    "Lemnos": "LXS",
     "Preveza": "PVK",
     "Rhodes": "RHO",
     "Thessaloniki": "SKG",
+    "Volos": "VOL",
     "Zakynthos": "ZTH"
+  },
+  "Romania": {
+    "Bucharest": "OTP",
+    "Cluj": "CLJ",
+    "IASI": "IAS"
   },
   "Germany": {
     "Berlin": "BER",
     "Bremen": "BRE",
     "Cologne": "CGN",
-    "Dresden": "DRS",
-    "Dortmund": "DTM",
     "Karlsruhe": "FKB",
     "Memmingen": "FMM",
     "Münster": "FMO",
+    "Hamburg": "LBC",
     "Frankfurt": "HHN",
-    "Hamburg": "HAM",
-    "Munich": "MUC",
     "Dusseldorf": "NRN",
-    "Nuremberg": "NUE"
+    "Nuremberg": "NUE",
+    "Paderborn": "PAD"
   },
   "France": {
-    "Brest": "BES",
     "Biarritz": "BIQ",
-    "Bordeaux": "BOD",
     "Paris": "XCR",
     "Brive": "BVE",
     "Beziers": "BZR",
@@ -161,13 +164,13 @@
     "Limoges": "LIG",
     "Lille": "LIL",
     "La Rochelle": "LRH",
-    "Lyon": "LYS",
     "Marseille": "MRS",
     "Nice": "NCE",
     "Nantes": "NTE",
     "Perpignan": "PGF",
     "Poitiers": "PIS",
     "Rodez": "RDZ",
+    "Strasbourg": "SXB",
     "Toulouse": "TLS",
     "Tours": "TUF"
   },
@@ -176,7 +179,8 @@
     "Dalaman": "DLM"
   },
   "Bosnia & Herzegovina": {
-    "Banja Luka": "BNX"
+    "Banja Luka": "BNX",
+    "Sarajevo": "SJJ"
   },
   "Bulgaria": {
     "Burgas": "BOJ",
@@ -195,13 +199,12 @@
     "Charleroi": "CRL"
   },
   "Switzerland": {
-    "Basel": "BSL",
-    "Geneva": "GVA",
-    "Zurich": "ZRH"
+    "Basel": "BSL"
   },
   "Slovakia": {
     "Bratislava": "BTS",
-    "Kosice": "KSC"
+    "Kosice": "KSC",
+    "Poprad - Tatry (Tatra Mountains)": "TAT"
   },
   "Hungary": {
     "Budapest": "BUD"
@@ -220,16 +223,9 @@
     "Warsaw": "WMI",
     "Wroclaw": "WRO"
   },
-  "Romania": {
-    "Cluj": "CLJ",
-    "Oradea": "OMR",
-    "Bucharest": "OTP",
-    "Sibiu": "SBZ",
-    "Suceava": "SCV",
-    "Timisoara": "TSR"
-  },
   "Croatia": {
     "Dubrovnik": "DBV",
+    "Osijek": "OSI",
     "Pula": "PUY",
     "Rijeka": "RJK",
     "Split": "SPU",
@@ -251,25 +247,19 @@
     "Ponta Delgada": "PDL",
     "Terceira": "TER"
   },
-  "Norway": {
-    "Haugesund": "HAU",
-    "Oslo": "OSL",
-    "Sandefjord": "TRF"
-  },
   "Finland": {
     "Helsinki": "HEL",
     "Lappeenranta": "LPP",
-    "Tampere": "TMP"
-  },
-  "Ukraine": {
-    "Kharkiv": "HRK",
-    "Kyiv": "KBP",
-    "Kherson": "KHE",
-    "Lviv": "LWO",
-    "Odessa": "ODS"
+    "Rovaniemi": "RVN"
   },
   "Serbia": {
     "Nis": "INI"
+  },
+  "Austria": {
+    "Klagenfurt": "KLU",
+    "Linz": "LNZ",
+    "Salzburg": "SZG",
+    "Vienna": "VIE"
   },
   "Lithuania": {
     "Kaunas": "KUN",
@@ -286,26 +276,23 @@
   "Malta": {
     "Malta": "MLA"
   },
+  "Norway": {
+    "Oslo": "OSL",
+    "Sandefjord": "TRF"
+  },
   "Latvia": {
     "Riga": "RIX"
   },
-  "Russia": {
-    "Moscow": "SVO"
-  },
-  "Austria": {
-    "Salzburg": "SZG",
-    "Vienna": "VIE"
-  },
   "Montenegro": {
     "Podgorica": "TGD"
+  },
+  "Albania": {
+    "Tirana": "TIA"
   },
   "Estonia": {
     "Tallinn": "TLL"
   },
   "Israel": {
     "Tel Aviv": "TLV"
-  },
-  "Tunisia": {
-    "Tunis": "TUN"
   }
 }
