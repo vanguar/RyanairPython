@@ -87,4 +87,30 @@ RyanairPython/
 
 ## Важно
 
-Этот бот использует неофициальное API Ryanair. Возможны изменения в работе API, которые могут повлиять на
+Этот бот использует неофициальное API Ryanair. Возможны изменения в работе API
+
+
+
+Берём официальный эндпоинт: https://www.ryanair.com/api/views/locate/5/airports/en/active. Вот ультра-короткий ритуал под Windows:
+
+1) Сохранить сырой JSON
+
+Вариант A (браузер): открой ссылку → Ctrl+S → сохранить как data\airports_raw.json (тип: Все файлы, кодировка UTF-8).
+Вариант B (PowerShell, одной строкой):
+
+powershell -NoProfile -Command "Invoke-WebRequest 'https://www.ryanair.com/api/views/locate/5/airports/en/active' -Headers @{ 'User-Agent'='Mozilla/5.0' } -OutFile 'data\airports_raw.json'"
+
+2) Собрать файлы для бота
+python tools\build_airports.py
+
+
+Это создаст/обновит:
+
+bot\airports_raw.json (словарь IATA → город)
+
+data\countries_data.json (страна → {город: IATA})
+
+3) Залить на Railway через GitHub
+git add data\airports_raw.json data\countries_data.json bot\airports_raw.json
+git commit -m "airports update"
+git push

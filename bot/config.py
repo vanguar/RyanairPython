@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID") # Опционально
 OPENWEATHER_API_KEY = os.environ.get("OPENWEATHER_API_KEY")
+# --- Stars (Telegram Stars / XTR) ---
+TELEGRAM_STARS_PROVIDER_TOKEN = os.getenv("TELEGRAM_STARS_PROVIDER_TOKEN", "STARS")
+
 
 if not TELEGRAM_BOT_TOKEN:
     logger.critical("Переменная окружения TELEGRAM_BOT_TOKEN не установлена!")

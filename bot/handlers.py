@@ -598,6 +598,7 @@ async def end_search_session_callback(update: Update, context: ContextTypes.DEFA
     donate_keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton("💸 Донат в USDT (TRC-20)", url="https://tronscan.org/#/address/TZ6rTYbF5Go94Q4f9uZwcVZ4g3oAnzwDHN")],
         [InlineKeyboardButton("⚡ Донат в TON", url="https://tonviewer.com/UQB0W1KEAR7RFQ03AIA872jw-2G2ntydiXlyhfTN8rAb2KN5")],
+        [InlineKeyboardButton("✨ Поддержать звёздами", callback_data="donate_menu")],
         [InlineKeyboardButton("✉️ Связаться с автором", url="https://t.me/Criptonius")]
     ])
 

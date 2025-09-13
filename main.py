@@ -16,6 +16,7 @@ from bot import user_history # Для init_db
 # >>>>> ДОБАВЬ ЭТИ ИМПОРТЫ <<<<<
 from bot import user_stats
 from bot.admin_handlers import stats_command, stats_callback_handler, daily_report_job
+from bot.donate_stars import get_handlers as donate_get_handlers
 # >>>>> КОНЕЦ <<<<<
 
 logging.basicConfig(
@@ -109,8 +110,14 @@ def main() -> None:
     # Глобальный обработчик ошибок
     application.add_error_handler(global_error_handler)
 
+    for h in donate_get_handlers():
+        application.add_handler(h)
+
     logger.info("Бот настроен и готов к работе. Запуск поллинга...")
     application.run_polling()
+
+    
+
 
 if __name__ == '__main__':
     main()
