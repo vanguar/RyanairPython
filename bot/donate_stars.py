@@ -48,7 +48,7 @@ except Exception:
     PROVIDER_TOKEN = "STARS"
 
 CURRENCY = "XTR"
-STARS_MULTIPLIER = 100  # 1 ⭐ = 100 минимальных единиц (если что — поменяешь на 1)
+STARS_MULTIPLIER = 1  # 1 ⭐ = 100 минимальных единиц (если что — поменяешь на 1)
 
 # ---- Модель подарка ----
 @dataclass(frozen=True)
