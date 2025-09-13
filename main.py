@@ -1,139 +1,145 @@
 # main.py
 import logging
-import asyncio # Для post_init, если будете использовать asyncio.run для main
-from telegram import Update # Добавлен импорт Update
-from telegram.ext import Application, ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from datetime import time
+
+from telegram import Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+)
+
 from bot import config
 from bot import fx_rates
-# Убедитесь, что handlers.py и его функции доступны для create_conversation_handler
+from bot import user_history
+from bot import user_stats
+
+# Handlers
 from bot.handlers import (
     create_conversation_handler,
-    prompt_new_search_type_callback, # Глобальный обработчик
-    end_search_session_callback # Глобальный обработчик
+    prompt_new_search_type_callback,   # глобальный обработчик
+    end_search_session_callback,       # глобальный обработчик
 )
-from bot import user_history # Для init_db
-# >>>>> ДОБАВЬ ЭТИ ИМПОРТЫ <<<<<
-from bot import user_stats
-from bot.admin_handlers import stats_command, stats_callback_handler, daily_report_job
-from bot.donate_stars import get_handlers as donate_get_handlers
-import logging
-from telegram.ext import Application  # если уже импортирован — повторно не надо
+from bot.handlers import create_top3_conversation_handler  # фабрика топ-3
 
+# Админ-панель и ежедневный отчёт
+from bot.admin_handlers import stats_command, stats_callback_handler, daily_report_job
+
+# Звёзды (Telegram Stars)
+from bot.donate_stars import get_handlers as donate_get_handlers
+
+
+# ---------- Базовая настройка логов ----------
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    handlers=[
+        logging.FileHandler("bot.log", mode="a", encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
+)
+logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+# logging.getLogger("telegram.ext").setLevel(logging.INFO)
+
+# ---------- Глобальный обработчик ошибок ----------
+async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Логирует ошибки, вызванные Update, и шлёт юзеру вежливое сообщение."""
+    logger.exception("Произошла необработанная ошибка во время обработки апдейта")
+    if isinstance(update, Update) and update.effective_chat:
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=(
+                    "Произошла непредвиденная ошибка. Попробуйте выполнить команду /start "
+                    "или свяжитесь с администратором, если проблема повторяется."
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Не удалось отправить сообщение об ошибке пользователю: {e}")
+
+# ---------- Хуки жизненного цикла ----------
 async def _log_bot_identity(app: Application) -> None:
+    """Логируем, под каким ботом поднялось приложение (удобно для проверки токена)."""
     me = await app.bot.get_me()
     logging.getLogger(__name__).info(
         "Running as @%s (id=%s, name=%s %s)",
         me.username,
         me.id,
         me.first_name or "",
-        me.last_name or ""
+        me.last_name or "",
     )
 
-# >>>>> КОНЕЦ <<<<<
-
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO,
-    handlers=[
-        logging.FileHandler("bot.log", mode='a', encoding='utf-8'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
-
-# Уменьшаем уровень логгирования для слишком "болтливых" библиотек
-logging.getLogger("httpx").setLevel(logging.WARNING)
-# logging.getLogger("telegram.ext").setLevel(logging.INFO) # Можно оставить INFO или поднять до WARNING
-
-async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Логирует ошибки, вызванные Update."""
-    # ИЗМЕНЕНИЕ: logger.error заменен на logger.exception для полного трейсбека
-    logger.exception("Произошла необработанная ошибка во время обработки апдейта")
-    
-    if isinstance(update, Update) and update.effective_chat: # Проверяем, что update - это Update
-        try:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text="Произошла непредвиденная ошибка. Попробуйте выполнить команду /start или свяжитесь с администратором, если проблема повторяется."
-            )
-        except Exception as e:
-            logger.error(f"Не удалось отправить сообщение об ошибке пользователю: {e}")
-
-async def post_init(application: Application) -> None:
-    """Выполняется после инициализации приложения, но до начала поллинга."""
+async def _post_init_all(application: Application) -> None:
+    """Единый post_init: сначала инициализируем БД/кеши, затем логируем identity."""
     await user_history.init_db()
-    # >>>>> ДОБАВЬ ИНИЦИАЛИЗАЦИЮ ТАБЛИЦЫ СТАТИСТИКИ <<<<<
     await user_stats.init_db()
     await fx_rates.init_db()
-    # >>>>> КОНЕЦ <<<<<
     logger.info("База данных инициализирована через post_init.")
+    await _log_bot_identity(application)
 
-# <<< НОВАЯ ФУНКЦИЯ-ОБЁРТКА >>>
-# Она принимает аргумент `application`, как того требует PTB, и вызывает нашу функцию.
 async def on_shutdown(application: Application) -> None:
+    """Чистое завершение: закрываем HTTP-клиент курсов валют и пр."""
     logger.info("Выполняется остановка бота, закрытие HTTP-клиента...")
-    await fx_rates.close_client()    
+    await fx_rates.close_client()
+
 
 def main() -> None:
-    """Запускает бота."""
+    """Точка входа бота."""
     if not config.TELEGRAM_BOT_TOKEN:
         logger.critical("Токен Telegram-бота не найден. Завершение работы.")
         return
 
     logger.info("Запуск бота...")
 
-    # Создание экземпляра Application с post_init хуком
+    # Создание Application с корректными хуками
     application = (
         Application.builder()
         .token(config.TELEGRAM_BOT_TOKEN)
-        .post_init(post_init)
-        .post_shutdown(on_shutdown)  # <-- РЕГИСТРИРУЕМ ОБЁРТКУ ЗДЕСЬ
+        .post_init(_post_init_all)   # ← единый post_init (инициализация БД + лог identity)
+        .post_shutdown(on_shutdown)
         .build()
     )
 
-    # >>>>> ДОБАВЬ ЕЖЕДНЕВНУЮ ЗАДАЧУ (JOB QUEUE) <<<<<
-    # Убедись, что ADMIN_TELEGRAM_ID задан в .env, иначе задача будет падать с ошибкой в логах
+    # Ежедневная задача (если указан админ)
     if config.ADMIN_TELEGRAM_ID:
-        # Запускаем каждый день в 21:00 по времени сервера
+        # Запуск каждый день в 21:00 по времени сервера
         application.job_queue.run_daily(daily_report_job, time(hour=21, minute=0))
         logger.info("Ежедневная задача для отправки отчета по статистике настроена.")
     else:
-        logger.warning("ADMIN_TELEGRAM_ID не установлен. Ежедневный отчет по статистике не будет отправляться.")
-    # >>>>> КОНЕЦ <<<<<
+        logger.warning(
+            "ADMIN_TELEGRAM_ID не установлен. Ежедневный отчет по статистике не будет отправляться."
+        )
 
-    # Получение ConversationHandler
-    conv_handler   = create_conversation_handler()
-
-    from bot.handlers import create_top3_conversation_handler   # импорт фабрики
-    top3_handler   = create_top3_conversation_handler()
-
+    # Основные ConversationHandler'ы
+    conv_handler = create_conversation_handler()
+    top3_handler = create_top3_conversation_handler()
     application.add_handler(conv_handler)
-    application.add_handler(top3_handler)      # ← добавили
+    application.add_handler(top3_handler)
 
-    # >>>>> ДОБАВЬ ОБРАБОТЧИКИ ДЛЯ АДМИН-ПАНЕЛИ <<<<<
+    # Админ-панель
     application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CallbackQueryHandler(stats_callback_handler, pattern="^stats_"))
-    # >>>>> КОНЕЦ <<<<<
 
-    # Глобальные обработчики для кнопок "Что дальше?"
-    application.add_handler(CallbackQueryHandler(prompt_new_search_type_callback, pattern="^prompt_new_search_type$"))
-    application.add_handler(CallbackQueryHandler(end_search_session_callback, pattern="^end_search_session$"))
+    # Глобальные обработчики «что дальше?»
+    application.add_handler(
+        CallbackQueryHandler(prompt_new_search_type_callback, pattern="^prompt_new_search_type$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(end_search_session_callback, pattern="^end_search_session$")
+    )
+
+    # Донаты звёздами (Stars)
+    for h in donate_get_handlers():
+        application.add_handler(h)
 
     # Глобальный обработчик ошибок
     application.add_error_handler(global_error_handler)
 
-    for h in donate_get_handlers():
-        application.add_handler(h)
-
-    application.post_init = _log_bot_identity
-   
-
     logger.info("Бот настроен и готов к работе. Запуск поллинга...")
     application.run_polling()
 
-    
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
