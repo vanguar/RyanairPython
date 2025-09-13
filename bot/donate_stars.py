@@ -2,28 +2,23 @@
 bot/donate_stars.py
 Витрина «подарков» через Telegram Stars (XTR) для PTB v20.
 
-Что делает:
-- Кнопка "✨ Поддержать звёздами" (callback_data="donate_menu") и команда /donate показывают витрину подарков.
-- По нажатию на «подарок» бот выставляет инвойс (sendInvoice) с currency='XTR'.
-- Обрабатывает PreCheckoutQuery и SuccessfulPayment, шлёт благодарность.
+Апгрейды:
+- /donate и кнопка "✨ Поддержать звёздами" показывают витрину.
+- По нажатию на подарок: отправляется инвойс (Stars), ВИТРИНА автоматически сворачивается.
+- После оплаты: кастомное "спасибо", лог в консоль, опциональное уведомление админу.
 
-Подключение в main.py:
+Подключение в main.py (у тебя уже сделано):
     from bot.donate_stars import get_handlers as donate_get_handlers
     for h in donate_get_handlers():
         application.add_handler(h)
-
-Важно:
-- Для Stars используем currency='XTR' и provider_token='STARS' (или из ENV).
-- Сумма указывается в «минимальных единицах». Сейчас берём множитель 100:
-  1 ⭐ = 100 минимальных единиц. Если у тебя покажет «неправильное» число —
-  поменяй STARS_MULTIPLIER на 1.
 """
 
 from __future__ import annotations
 
 import time
+import logging
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from telegram import (
     Update,
@@ -40,15 +35,20 @@ from telegram.ext import (
     filters,
 )
 
+log = logging.getLogger(__name__)
+
 # ---- Конфиг/провайдер ----
 try:
     from . import config  # bot.config
     PROVIDER_TOKEN = getattr(config, "TELEGRAM_STARS_PROVIDER_TOKEN", "STARS")
+    ADMIN_ID: Optional[int] = getattr(config, "ADMIN_TELEGRAM_ID", None)
 except Exception:
     PROVIDER_TOKEN = "STARS"
+    ADMIN_ID = None
 
 CURRENCY = "XTR"
-STARS_MULTIPLIER = 1  # 1 ⭐ = 100 минимальных единиц (если что — поменяешь на 1)
+# ⚠️ Для текущего поведения Stars множитель = 1 (1⭐ = 1 минимальная единица).
+STARS_MULTIPLIER = 1
 
 # ---- Модель подарка ----
 @dataclass(frozen=True)
@@ -70,6 +70,16 @@ GIFTS: List[Gift] = [
     Gift("🏆", "Кубок",              100,  "Топовый бот — топовая награда."),
     Gift("💍", "Кольцо",             100,  "Ого. Это серьёзно!"),
 ]
+
+# ---- Текст благодарности (можешь кастомизировать как хочешь) ----
+THANK_YOU_TEXT_TEMPLATE = (
+    "{gift} Спасибо за поддержку, {name}! "
+    "Ты задонатил(а) {stars}⭐ — это мотивирует развивать бота. "
+    "Если хочешь — подпишись и расскажи друзьям 😉"
+)
+
+# Если включить True — после выбора подарка удаляем «витрину», чтобы чат был чище
+DELETE_CATALOG_ON_INVOICE = True
 
 # ---- Клавиатуры ----
 def _build_gifts_keyboard() -> InlineKeyboardMarkup:
@@ -108,7 +118,6 @@ async def donate_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 async def donate_menu_back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
     await q.answer("Назад")
-    # Здесь можно перерисовать твоё главное меню. Чтобы не тянуть зависимости:
     await q.edit_message_text("Вы вернулись в меню. Нажмите /start, чтобы продолжить.")
 
 # ---- Выставление инвойса ----
@@ -141,7 +150,25 @@ async def gift_pick_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     except Exception:
         await q.answer("Ошибка выбора подарка", show_alert=True)
         return
+
+    # 1) Отправляем инвойс
     await _send_invoice_for_gift(update, context, gift_id)
+
+    # 2) Сворачиваем витрину (чтобы не засорять чат)
+    try:
+        if DELETE_CATALOG_ON_INVOICE:
+            await q.delete_message()
+        else:
+            g = GIFTS[gift_id]
+            await q.edit_message_text(
+                f"Вы выбрали: {g.emoji} {g.title} — {g.price_stars}⭐\n"
+                f"Теперь подтвердите оплату в появившемся окне ниже.",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("⬅️ Выбрать другой подарок", callback_data="donate_menu")]]
+                )
+            )
+    except Exception as e:
+        log.debug("Не удалось свернуть/отредактировать витрину: %s", e)
 
 # ---- PreCheckout: обязательно ответить ok=True ----
 async def precheckout_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -154,20 +181,46 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
     total = sp.total_amount  # в минимальных единицах XTR
     stars = total // STARS_MULTIPLIER if STARS_MULTIPLIER else total
     payload = sp.invoice_payload or ""
-    gift_emoji = "✨"
+    user = update.effective_user
+    name = user.first_name or (user.username and f"@{user.username}") or "друг"
 
+    gift_emoji = "✨"
+    gift_title = "Подарок"
+
+    # Пытаемся вытащить id подарка из payload
     try:
         parts = payload.split(":")
         if len(parts) >= 2 and parts[0] == "gift":
             gift_id = int(parts[1])
             if 0 <= gift_id < len(GIFTS):
                 gift_emoji = GIFTS[gift_id].emoji
+                gift_title = GIFTS[gift_id].title
     except Exception:
         pass
 
-    await update.message.reply_text(
-        f"{gift_emoji} Спасибо! Оплата прошла успешно — {stars}⭐"
-    )
+    # 1) Тёплое «спасибо»
+    thank_text = THANK_YOU_TEXT_TEMPLATE.format(gift=gift_emoji, name=name, stars=stars)
+    try:
+        await update.message.reply_text(thank_text)
+    except Exception as e:
+        log.warning("Не смогли отправить спасибо: %s", e)
+
+    # 2) Лог в консоль
+    log.info("⭐ DONATION: user_id=%s username=%s gift=%s stars=%s payload=%s",
+             user.id, user.username, gift_title, stars, payload)
+
+    # 3) Уведомление админу (если указан)
+    if ADMIN_ID:
+        try:
+            await context.bot.send_message(
+                chat_id=int(ADMIN_ID),
+                text=(f"⭐ Донат получен\n"
+                      f"Пользователь: @{user.username or user.id}\n"
+                      f"Подарок: {gift_emoji} {gift_title}\n"
+                      f"Сумма: {stars} ⭐")
+            )
+        except Exception as e:
+            log.debug("Не удалось отправить уведомление админу: %s", e)
 
 # ---- Экспорт набора хендлеров для main.py ----
 def get_handlers():
