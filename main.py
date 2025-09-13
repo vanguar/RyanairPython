@@ -17,6 +17,19 @@ from bot import user_history # Для init_db
 from bot import user_stats
 from bot.admin_handlers import stats_command, stats_callback_handler, daily_report_job
 from bot.donate_stars import get_handlers as donate_get_handlers
+import logging
+from telegram.ext import Application  # если уже импортирован — повторно не надо
+
+async def _log_bot_identity(app: Application) -> None:
+    me = await app.bot.get_me()
+    logging.getLogger(__name__).info(
+        "Running as @%s (id=%s, name=%s %s)",
+        me.username,
+        me.id,
+        me.first_name or "",
+        me.last_name or ""
+    )
+
 # >>>>> КОНЕЦ <<<<<
 
 logging.basicConfig(
@@ -112,6 +125,9 @@ def main() -> None:
 
     for h in donate_get_handlers():
         application.add_handler(h)
+
+    application.post_init = _log_bot_identity
+   
 
     logger.info("Бот настроен и готов к работе. Запуск поллинга...")
     application.run_polling()
