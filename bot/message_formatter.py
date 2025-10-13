@@ -51,8 +51,8 @@ async def format_flight_details(flight: any,
                                 departure_country_name: str | None = None,
                                 arrival_country_name: str | None = None) -> str:
     flight_info_parts = []
-    custom_separator = "────────✈️────────\n"
-    weather_separator = "--------------------\n"
+    custom_separator = "─────────────✈️────────────\n"
+    weather_separator = "----------------------------------------\n"
 
     logger.debug(f"Начало форматирования для объекта flight: {type(flight)}")
     if flight is None:
@@ -300,7 +300,7 @@ async def format_flight_details(flight: any,
         # 🔎 CTA: больше вариантов перед погодой
         flight_info_parts.append(f"\n{weather_separator}")
         flight_info_parts.append(
-            '📅 <b>Календарь низких цен</b>: больше дат и направлений — <a href="https://www.freetour.pro/planner/">freetour</a>\n'
+            '📅 <b>Календарь низких цен</b>: больше дат и направлений — <a href="https://www.freetour.pro/planner/">↗️freetour</a>\n'
 
         )
         
