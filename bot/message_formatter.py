@@ -295,7 +295,10 @@ async def format_flight_details(flight: any,
             else:
                 logger.info(f"Прогноз погоды для города прилета {arr_city_for_weather} на {arr_target_dt} не получен.")
 
+
+
         # 🔎 CTA: больше вариантов перед погодой
+        flight_info_parts.append(f"\n{weather_separator}")
         flight_info_parts.append(
             '📅 <b>Календарь низких цен</b>: больше дат и направлений — <a href="https://www.freetour.pro/planner/">freetour</a>\n'
 
