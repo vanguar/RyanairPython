@@ -300,7 +300,7 @@ async def format_flight_details(flight: any,
         # 🔎 CTA: больше вариантов перед погодой
         flight_info_parts.append(f"\n{weather_separator}")
         flight_info_parts.append(
-            '📅 <b>Календарь низких цен</b>: больше дат и направлений — <a href="https://www.freetour.pro/planner/">🔗 freetour</a>\n'
+            '📅 <b>Календарь низких цен</b>: больше дат и направлений — <a href="https://www.freetour.vip/planner/">🔗 freetour</a>\n'
 
         )
         
